@@ -120,7 +120,7 @@ public class ProxVpnService extends VpnService implements Runnable {
 
             outgoing.close();
         } catch (IOException e) {
-            Log.e(TAG, "VPN ended with error", e);
+            Log.w(TAG, "VPN ended with exception", e);
         } finally {
             IOUtils.closeQuietly(ingoing);
             ingoing = null;
