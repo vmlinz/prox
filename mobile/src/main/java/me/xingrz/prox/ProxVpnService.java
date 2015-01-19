@@ -23,6 +23,8 @@ import android.net.VpnService;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
 
+import org.apache.commons.io.IOUtils;
+
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -82,13 +84,11 @@ public class ProxVpnService extends VpnService implements Runnable {
             thread = null;
         }
 
-        if (intf != null) {
-            intf = null;
-        }
+        IOUtils.closeQuietly(ingoing);
+        ingoing = null;
 
-        if (ingoing != null) {
-            ingoing = null;
-        }
+        IOUtils.closeQuietly(intf);
+        intf = null;
 
         instance = null;
 
@@ -123,8 +123,12 @@ public class ProxVpnService extends VpnService implements Runnable {
             Log.e(TAG, "VPN ended with error", e);
         } finally {
             IOUtils.closeQuietly(ingoing);
+            ingoing = null;
+
             IOUtils.closeQuietly(outgoing);
+
             IOUtils.closeQuietly(intf);
+            intf = null;
         }
     }
 

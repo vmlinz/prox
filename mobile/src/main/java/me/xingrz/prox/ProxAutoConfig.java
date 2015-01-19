@@ -18,14 +18,101 @@
 
 package me.xingrz.prox;
 
+import android.util.Log;
+
+import org.apache.http.HttpResponse;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.impl.client.DefaultHttpClient;
+import org.apache.http.util.EntityUtils;
+import org.mozilla.javascript.Context;
+import org.mozilla.javascript.Function;
+import org.mozilla.javascript.Scriptable;
+
+import java.io.IOException;
+
+/**
+ * PAC 解析器
+ *
+ * @author XiNGRZ
+ */
 public class ProxAutoConfig {
 
-    public static ProxAutoConfig fromUrl(String url) {
+    private static final String TAG = "ProxAutoConfig";
+
+    /**
+     * 从 {@code url} 抓取 PAC 内容并返回新实例
+     *
+     * @param url PAC 地址
+     * @return 新的 {@code ProxAutoConfig} 实例
+     * @throws IOException
+     */
+    public static ProxAutoConfig fromUrl(String url) throws IOException {
+        HttpResponse response = new DefaultHttpClient().execute(new HttpGet(url));
+        String config = EntityUtils.toString(response.getEntity());
+        return new ProxAutoConfig(config);
+    }
+
+    private static final String PROXY_PREFIX = "PROXY ";
+    private static final String PAC_FUNCTION = "FindProxyForURL";
+
+    private final Context rhino;
+    private final Scriptable scope;
+    private final Function handler;
+
+    /**
+     * 以 PAC 内容创建新实例
+     *
+     * @param config PAC 内容
+     */
+    public ProxAutoConfig(String config) {
+        rhino = Context.enter();
+        rhino.setOptimizationLevel(-1);
+
+        scope = rhino.initStandardObjects();
+        rhino.evaluateString(scope, config, "pac", 1, null);
+
+        handler = (Function) scope.get(PAC_FUNCTION, scope);
+    }
+
+    /**
+     * 查找指定 {@code url} 或 {@code host} 的代理地址
+     *
+     * @param url  URL，与 {@code host} 不能同时为 {@code null}
+     * @param host 主机名，与 {@code url} 不能同时为 {@code null}
+     * @return 代理服务器地址，或 {@code null} 表示直连
+     */
+    public String findProxyForUrl(String url, String host) {
+        if (handler == null) {
+            Log.w(TAG, "no handler function found");
+            return null;
+        }
+
+        Object result = handler.call(rhino, scope, scope, new Object[]{url, host});
+
+        if (result == null) {
+            Log.w(TAG, "null result");
+            return null;
+        }
+
+        if (!(result instanceof String)) {
+            Log.w(TAG, "result not String");
+            return null;
+        }
+
+        String config = (String) result;
+
+        if (config.startsWith(PROXY_PREFIX)) {
+            return config.split(";")[0].substring(PROXY_PREFIX.length());
+        }
+
         return null;
     }
 
-    public ProxAutoConfig(String config) {
-
+    /**
+     * 释放对象
+     */
+    public void destroy() {
+        Context.exit();
     }
 
 }

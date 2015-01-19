@@ -18,40 +18,61 @@
 
 package me.xingrz.prox;
 
+import android.content.Intent;
 import android.os.Bundle;
 import android.support.v7.app.ActionBarActivity;
-import android.view.Menu;
-import android.view.MenuItem;
+import android.view.View;
+import android.widget.EditText;
 
 
 public class MainActivity extends ActionBarActivity {
+
+    private static final int REQUEST_START_VPN_SERVICE = 1;
+
+    private EditText url;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        url = (EditText) findViewById(R.id.url);
+
+        findViewById(R.id.connect).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                prepareVpnService();
+            }
+        });
     }
 
-
     @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
-        // Inflate the menu; this adds items to the action bar if it is present.
-        getMenuInflater().inflate(R.menu.main, menu);
-        return true;
-    }
-
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        // Handle action bar item clicks here. The action bar will
-        // automatically handle clicks on the Home/Up button, so long
-        // as you specify a parent activity in AndroidManifest.xml.
-        int id = item.getItemId();
-
-        //noinspection SimplifiableIfStatement
-        if (id == R.id.action_settings) {
-            return true;
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        switch (requestCode) {
+            case REQUEST_START_VPN_SERVICE:
+                if (resultCode == RESULT_OK) {
+                    startVpnService();
+                }
+                break;
+            default:
+                super.onActivityResult(requestCode, resultCode, data);
+                break;
         }
-
-        return super.onOptionsItemSelected(item);
     }
+
+    private void prepareVpnService() {
+        Intent confirmIntent = ProxVpnService.prepare(this);
+        if (confirmIntent != null) {
+            startActivityForResult(confirmIntent, REQUEST_START_VPN_SERVICE);
+        } else {
+            startVpnService();
+        }
+    }
+
+    private void startVpnService() {
+        Intent vpnIntent = new Intent(this, ProxVpnService.class);
+        vpnIntent.putExtra(ProxVpnService.EXTRA_PAC_URL, url.getText().toString());
+        startService(vpnIntent);
+    }
+
 }
