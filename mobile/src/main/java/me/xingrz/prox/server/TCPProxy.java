@@ -44,8 +44,8 @@ public class TCPProxy implements Runnable {
         Log.v(TAG, "running on " + port());
     }
 
-    public int port() {
-        return channel.socket().getLocalPort();
+    public short port() {
+        return (short) channel.socket().getLocalPort();
     }
 
     @Override

@@ -239,6 +239,8 @@ public class ProxVpnService extends VpnService implements Runnable {
                     session.remoteHost = host;
                 }
 
+                Log.v(TAG, "Host: " + session.remoteHost);
+
                 if (session.proxy == null) {
                     String proxy = pac.findProxyForUrl(null, session.remoteHost);
                     if (proxy == null) {
