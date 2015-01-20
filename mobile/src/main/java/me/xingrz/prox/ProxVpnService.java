@@ -31,6 +31,9 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 
+import me.xingrz.prox.http.HttpHeaderParser;
+import me.xingrz.prox.nat.NatSession;
+import me.xingrz.prox.nat.NatSessionManager;
 import me.xingrz.prox.server.TCPProxy;
 import me.xingrz.prox.tcpip.IPHeader;
 import me.xingrz.prox.tcpip.IPv4Header;
@@ -79,6 +82,8 @@ public class ProxVpnService extends VpnService implements Runnable {
 
     private TCPProxy tcpProxy;
 
+    private NatSessionManager sessionManager;
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -90,6 +95,8 @@ public class ProxVpnService extends VpnService implements Runnable {
         ipHeader = new IPHeader(packet);
         iPv4Header = new IPv4Header(packet);
         tcpHeader = new TCPHeader(packet);
+
+        sessionManager = NatSessionManager.getInstance();
     }
 
     @Override
@@ -186,8 +193,13 @@ public class ProxVpnService extends VpnService implements Runnable {
         }
 
         Log.v(TAG, iPv4Header.toString());
-        if (iPv4Header.protocol() == IPHeader.PROTOCOL_TCP) {
-            onTCPPacketReceived();
+        switch (iPv4Header.protocol()) {
+            case IPHeader.PROTOCOL_TCP:
+                onTCPPacketReceived();
+                break;
+            case IPHeader.PROTOCOL_UDP:
+                onUDPPacketReceived();
+                break;
         }
     }
 
@@ -196,11 +208,58 @@ public class ProxVpnService extends VpnService implements Runnable {
 
         // 只处理经由本 VPN 发出去的包
         if (tcpHeader.getSourceIpAddress().equals(PROXY_ADDRESS)) {
-            // 如果是来自本地 TCP 代理，表示是从隧道回来的包，回写给 VPN
             if (tcpHeader.getSourcePort() == tcpProxy.port()) {
+                // 如果是来自本地 TCP 代理，表示是从隧道回来的包，回写给 VPN
+                NatSession session = sessionManager.getSession(tcpHeader.getDestinationPort());
+                if (session == null) {
+                    Log.w(TAG, "no session record for " + iPv4Header + " " + tcpHeader);
+                    return;
+                }
 
+                tcpHeader.setSourceIp(tcpHeader.getDestinationIp());
+                tcpHeader.setSourcePort(session.remotePort);
+                tcpHeader.setDestinationIp(PROXY_ADDRESS);
+                tcpHeader.recomputeChecksum();
+
+                ingoing.write(packet, 0, tcpHeader.totalLength());
+            } else {
+                // 否则是即将发往公网的数据包
+                NatSession session = sessionManager.pickSession(
+                        tcpHeader.getSourcePort(),
+                        tcpHeader.getDestinationIp(),
+                        tcpHeader.getDestinationPort());
+
+                if (session.remoteHost == null) {
+                    String host = HttpHeaderParser.parseHost(packet,
+                            tcpHeader.tcpDataOffset(), tcpHeader.tcpDataLength());
+                    if (host == null) {
+                        host = tcpHeader.getDestinationIpAddress().getHostAddress();
+                    }
+
+                    session.remoteHost = host;
+                }
+
+                if (session.proxy == null) {
+                    String proxy = pac.findProxyForUrl(null, session.remoteHost);
+                    if (proxy == null) {
+                        proxy = "DIRECT";
+                    }
+
+                    session.proxy = proxy;
+                }
+
+                tcpHeader.setSourceIp(tcpHeader.getDestinationIp());
+                tcpHeader.setDestinationIp(PROXY_ADDRESS);
+                tcpHeader.setDestinationPort(tcpProxy.port());
+                tcpHeader.recomputeChecksum();
+
+                ingoing.write(packet, 0, tcpHeader.totalLength());
             }
         }
+    }
+
+    private void onUDPPacketReceived() throws IOException {
+
     }
 
 }

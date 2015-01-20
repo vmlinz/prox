@@ -49,8 +49,16 @@ public class TCPHeader extends IPv4Header {
         return NumericUtils.readShort(packet, offset());
     }
 
+    public void setSourcePort(short port) {
+        NumericUtils.writeShort(packet, offset(), port);
+    }
+
     public short getDestinationPort() {
         return NumericUtils.readShort(packet, offset() + 2);
+    }
+
+    public void setDestinationPort(short port) {
+        NumericUtils.writeShort(packet, offset() + 2, port);
     }
 
     public int tcpHeaderLength() {
@@ -59,6 +67,10 @@ public class TCPHeader extends IPv4Header {
 
     public int tcpDataOffset() {
         return offset() + tcpHeaderLength();
+    }
+
+    public int tcpDataLength() {
+        return totalLength() - tcpDataOffset();
     }
 
     public boolean ack() {
@@ -81,9 +93,27 @@ public class TCPHeader extends IPv4Header {
         return (packet[offset() + 13] & FLAG_FIN) == FLAG_FIN;
     }
 
+    public short getTcpHeaderChecksum() {
+        return NumericUtils.readShort(packet, offset() + 16);
+    }
+
+    public void setTcpHeaderChecksum(short checksum) {
+        NumericUtils.writeShort(packet, offset() + 16, checksum);
+    }
+
     @Override
     public void recomputeChecksum() {
         super.recomputeChecksum();
+
+        int ipDataLength = ipDataLength();
+        if (ipDataLength < 0) {
+            return;
+        }
+
+        int sum = sum(12, 8) + (protocol() & 0xff) + ipDataLength;
+
+        setTcpHeaderChecksum((short) 0);
+        setTcpHeaderChecksum(checksum(sum, offset(), ipDataLength));
     }
 
     @Override
