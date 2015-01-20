@@ -28,10 +28,29 @@ import org.apache.commons.io.IOUtils;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+
+import me.xingrz.prox.server.TCPProxy;
+import me.xingrz.prox.tcpip.IPHeader;
+import me.xingrz.prox.tcpip.IPv4Header;
+import me.xingrz.prox.tcpip.TCPHeader;
 
 public class ProxVpnService extends VpnService implements Runnable {
 
     private static final String TAG = "ProxVpnService";
+
+
+    private static InetAddress getProxyAddress() {
+        try {
+            return InetAddress.getByName("192.168.0.1");
+        } catch (UnknownHostException e) {
+            return null;
+        }
+    }
+
+    private static final InetAddress PROXY_ADDRESS = getProxyAddress();
+
 
     private static ProxVpnService instance;
 
@@ -39,7 +58,9 @@ public class ProxVpnService extends VpnService implements Runnable {
         return instance;
     }
 
+
     public static final String EXTRA_PAC_URL = "pac_url";
+
 
     private String configUrl;
 
@@ -52,13 +73,23 @@ public class ProxVpnService extends VpnService implements Runnable {
 
     private byte[] packet;
 
+    private IPHeader ipHeader;
+    private IPv4Header iPv4Header;
+    private TCPHeader tcpHeader;
+
+    private TCPProxy tcpProxy;
+
     @Override
     public void onCreate() {
         super.onCreate();
 
         instance = this;
 
-        packet = new byte[20480];
+        packet = new byte[0xffff];
+
+        ipHeader = new IPHeader(packet);
+        iPv4Header = new IPv4Header(packet);
+        tcpHeader = new TCPHeader(packet);
     }
 
     @Override
@@ -105,6 +136,9 @@ public class ProxVpnService extends VpnService implements Runnable {
             pac = ProxAutoConfig.fromUrl(configUrl);
             Log.d(TAG, "PAC loaded");
 
+            tcpProxy = new TCPProxy();
+            Log.d(TAG, "TCP proxy started");
+
             intf = establish();
             Log.d(TAG, "VPN interface established");
 
@@ -134,12 +168,39 @@ public class ProxVpnService extends VpnService implements Runnable {
 
     private ParcelFileDescriptor establish() {
         return new Builder()
-                .addAddress("192.168.0.1", 24)
+                .addAddress(PROXY_ADDRESS, 24)
                 .addRoute("0.0.0.0", 0)
                 .establish();
     }
 
     private void onIPPacketReceived(int size) throws IOException {
+        if (ipHeader.version() == IPHeader.VERSION_4) {
+            onIPv4PacketReceived(size);
+        }
+    }
+
+    private void onIPv4PacketReceived(int size) throws IOException {
+        if (iPv4Header.totalLength() != size) {
+            Log.w(TAG, "ignored TCP packet with wrong length");
+            return;
+        }
+
+        Log.v(TAG, iPv4Header.toString());
+        if (iPv4Header.protocol() == IPHeader.PROTOCOL_TCP) {
+            onTCPPacketReceived();
+        }
+    }
+
+    private void onTCPPacketReceived() throws IOException {
+        Log.v(TAG, tcpHeader.toString());
+
+        // 只处理经由本 VPN 发出去的包
+        if (tcpHeader.getSourceIpAddress().equals(PROXY_ADDRESS)) {
+            // 如果是来自本地 TCP 代理，表示是从隧道回来的包，回写给 VPN
+            if (tcpHeader.getSourcePort() == tcpProxy.port()) {
+
+            }
+        }
     }
 
 }
