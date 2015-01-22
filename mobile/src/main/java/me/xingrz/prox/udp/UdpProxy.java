@@ -101,14 +101,17 @@ public class UdpProxy implements Runnable {
      * @param sourcePort    本地来源端口，作为识别
      * @param remoteAddress 目标地址
      * @param remotePort    目标端口
+     * @return 所创建的会话
      * @throws IOException
      */
-    public void prepare(int sourcePort, InetAddress remoteAddress, int remotePort) throws IOException {
-        sessions.put(sourcePort, new UdpProxySession(sourcePort, remoteAddress, remotePort));
+    public UdpProxySession createSession(int sourcePort, InetAddress remoteAddress, int remotePort) throws IOException {
+        UdpProxySession session = new UdpProxySession(this, sourcePort, remoteAddress, remotePort);
+        sessions.put(sourcePort, session);
+        return session;
     }
 
     /**
-     * 收到了刚才 VPN 网关 {@link #prepare(int, java.net.InetAddress, int)} 过后的转发数据包
+     * 收到了刚才 VPN 网关 {@link #createSession(int, java.net.InetAddress, int)} 过后的转发数据包
      * 那么我们就将它发到该去的地方吧！
      *
      * @param localChannel 代表网关的通道
@@ -135,12 +138,26 @@ public class UdpProxy implements Runnable {
     }
 
     /**
+     * 将公网的 UDP 返回反哺回给 VPN 网关
+     *
+     * @param buffer 返回数据
+     * @param session 对应的会话
+     * @throws IOException
+     */
+    void feedback(ByteBuffer buffer, UdpProxySession session) throws IOException {
+        InetSocketAddress address = new InetSocketAddress(
+                serverChannel.socket().getLocalAddress(), session.getSourcePort());
+
+        serverChannel.send(buffer, address);
+    }
+
+    /**
      * 完成会话
      *
      * @param sourcePort 本地来源端口，作为识别
      * @return 会话对象
      */
-    public UdpProxySession finish(int sourcePort) {
+    public UdpProxySession finishSession(int sourcePort) {
         return sessions.remove(sourcePort);
     }
 

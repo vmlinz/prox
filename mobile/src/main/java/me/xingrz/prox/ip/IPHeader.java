@@ -18,6 +18,8 @@
 
 package me.xingrz.prox.ip;
 
+import java.io.OutputStream;
+
 public class IPHeader {
 
     public static final byte VERSION_4 = 4;

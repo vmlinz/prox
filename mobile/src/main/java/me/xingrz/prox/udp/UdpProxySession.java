@@ -23,6 +23,7 @@ import android.util.Log;
 import org.apache.commons.io.IOUtils;
 
 import java.io.IOException;
+import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -34,6 +35,8 @@ import java.util.Iterator;
 public class UdpProxySession implements Runnable {
 
     private static final String TAG = "UdpProxySession";
+
+    private final UdpProxy udpProxy;
 
     private final int sourcePort;
 
@@ -49,7 +52,10 @@ public class UdpProxySession implements Runnable {
 
     private volatile boolean running = true;
 
-    public UdpProxySession(int sourcePort, InetAddress remoteAddress, int remotePort) throws IOException {
+    public UdpProxySession(UdpProxy udpProxy, int sourcePort,
+                           InetAddress remoteAddress, int remotePort) throws IOException {
+        this.udpProxy = udpProxy;
+
         this.sourcePort = sourcePort;
 
         this.remoteAddress = remoteAddress;
@@ -64,6 +70,10 @@ public class UdpProxySession implements Runnable {
 
         thread = new Thread(this, "DNS Proxy Session");
         thread.start();
+    }
+
+    public DatagramSocket socket() {
+        return serverChannel.socket();
     }
 
     public void send(ByteBuffer buffer) throws IOException {
@@ -102,6 +112,7 @@ public class UdpProxySession implements Runnable {
         buffer.clear();
         channel.receive(buffer);
         buffer.flip();
+        udpProxy.feedback(buffer, this);
     }
 
     public int getSourcePort() {

@@ -18,6 +18,8 @@
 
 package me.xingrz.prox.ip;
 
+import java.io.IOException;
+import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 
@@ -145,6 +147,10 @@ public class IPv4Header extends IPHeader {
         }
 
         return (short) ~sum;
+    }
+
+    public void writeTo(OutputStream stream) throws IOException {
+        stream.write(packet, 0, totalLength());
     }
 
     @Override
