@@ -31,13 +31,15 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 
-import me.xingrz.prox.http.HttpHeaderParser;
-import me.xingrz.prox.nat.NatSession;
-import me.xingrz.prox.nat.NatSessionManager;
-import me.xingrz.prox.server.TCPProxy;
-import me.xingrz.prox.tcpip.IPHeader;
-import me.xingrz.prox.tcpip.IPv4Header;
-import me.xingrz.prox.tcpip.TCPHeader;
+import me.xingrz.prox.tcp.NatSession;
+import me.xingrz.prox.tcp.NatSessionManager;
+import me.xingrz.prox.udp.UdpProxy;
+import me.xingrz.prox.tcp.TCPProxy;
+import me.xingrz.prox.ip.IPHeader;
+import me.xingrz.prox.ip.IPv4Header;
+import me.xingrz.prox.tcp.TCPHeader;
+import me.xingrz.prox.udp.UdpHeader;
+import me.xingrz.prox.udp.UdpProxySession;
 
 public class ProxVpnService extends VpnService implements Runnable {
 
@@ -78,9 +80,12 @@ public class ProxVpnService extends VpnService implements Runnable {
 
     private IPHeader ipHeader;
     private IPv4Header iPv4Header;
+
     private TCPHeader tcpHeader;
+    private UdpHeader udpHeader;
 
     private TCPProxy tcpProxy;
+    private UdpProxy udpProxy;
 
     private NatSessionManager sessionManager;
 
@@ -94,7 +99,9 @@ public class ProxVpnService extends VpnService implements Runnable {
 
         ipHeader = new IPHeader(packet);
         iPv4Header = new IPv4Header(packet);
+
         tcpHeader = new TCPHeader(packet);
+        udpHeader = new UdpHeader(packet);
 
         sessionManager = NatSessionManager.getInstance();
     }
@@ -122,12 +129,6 @@ public class ProxVpnService extends VpnService implements Runnable {
             thread = null;
         }
 
-        IOUtils.closeQuietly(ingoing);
-        ingoing = null;
-
-        IOUtils.closeQuietly(intf);
-        intf = null;
-
         instance = null;
 
         Log.d(TAG, "VPN service destroyed");
@@ -144,7 +145,11 @@ public class ProxVpnService extends VpnService implements Runnable {
             Log.d(TAG, "PAC loaded");
 
             tcpProxy = new TCPProxy();
+            tcpProxy.start();
             Log.d(TAG, "TCP proxy started");
+
+            udpProxy = new UdpProxy();
+            Log.d(TAG, "DNS proxy started");
 
             intf = establish();
             Log.d(TAG, "VPN interface established");
@@ -170,6 +175,11 @@ public class ProxVpnService extends VpnService implements Runnable {
 
             IOUtils.closeQuietly(intf);
             intf = null;
+
+            tcpProxy.stop();
+            udpProxy.stop();
+
+            pac.destroy();
         }
     }
 
@@ -192,7 +202,7 @@ public class ProxVpnService extends VpnService implements Runnable {
             return;
         }
 
-        Log.v(TAG, iPv4Header.toString());
+        //Log.v(TAG, iPv4Header.toString());
         switch (iPv4Header.protocol()) {
             case IPHeader.PROTOCOL_TCP:
                 onTCPPacketReceived();
@@ -204,64 +214,103 @@ public class ProxVpnService extends VpnService implements Runnable {
     }
 
     private void onTCPPacketReceived() throws IOException {
-        Log.v(TAG, tcpHeader.toString());
+        //Log.v(TAG, tcpHeader.toString());
 
         // 只处理经由本 VPN 发出去的包
-        if (tcpHeader.getSourceIpAddress().equals(PROXY_ADDRESS)) {
-            if (tcpHeader.getSourcePort() == tcpProxy.port()) {
-                // 如果是来自本地 TCP 代理，表示是从隧道回来的包，回写给 VPN
-                NatSession session = sessionManager.getSession(tcpHeader.getDestinationPort());
-                if (session == null) {
-                    Log.w(TAG, "no session record for " + iPv4Header + " " + tcpHeader);
-                    return;
-                }
+        if (!tcpHeader.getSourceIpAddress().equals(PROXY_ADDRESS)) {
+            return;
+        }
 
-                tcpHeader.setSourceIp(tcpHeader.getDestinationIp());
-                tcpHeader.setSourcePort(session.remotePort);
-                tcpHeader.setDestinationIp(PROXY_ADDRESS);
-                tcpHeader.recomputeChecksum();
-
-                ingoing.write(packet, 0, tcpHeader.totalLength());
-            } else {
-                // 否则是即将发往公网的数据包
-                NatSession session = sessionManager.pickSession(
-                        tcpHeader.getSourcePort(),
-                        tcpHeader.getDestinationIp(),
-                        tcpHeader.getDestinationPort());
-
-                if (session.remoteHost == null) {
-                    String host = HttpHeaderParser.parseHost(packet,
-                            tcpHeader.tcpDataOffset(), tcpHeader.tcpDataLength());
-                    if (host == null) {
-                        host = tcpHeader.getDestinationIpAddress().getHostAddress();
-                    }
-
-                    session.remoteHost = host;
-                }
-
-                Log.v(TAG, "Host: " + session.remoteHost);
-
-                if (session.proxy == null) {
-                    String proxy = pac.findProxyForUrl(null, session.remoteHost);
-                    if (proxy == null) {
-                        proxy = "DIRECT";
-                    }
-
-                    session.proxy = proxy;
-                }
-
-                tcpHeader.setSourceIp(tcpHeader.getDestinationIp());
-                tcpHeader.setDestinationIp(PROXY_ADDRESS);
-                tcpHeader.setDestinationPort(tcpProxy.port());
-                tcpHeader.recomputeChecksum();
-
-                ingoing.write(packet, 0, tcpHeader.totalLength());
+        if (tcpHeader.getSourcePort() == tcpProxy.port()) {
+            // 如果是来自本地 TCP 代理，表示是从隧道回来的包，回写给 VPN
+            NatSession session = sessionManager.getSession(tcpHeader.getDestinationPort());
+            if (session == null) {
+                Log.w(TAG, "no session record for " + iPv4Header + " " + tcpHeader);
+                return;
             }
+
+            // 因为 TCP 是传输层协议，而我们的 VPN 是工作在网络层的
+            // 所以我们要直接在网络层将 TCP 包转发到 TCPProxy
+            // 再用工作在传输层的 TCPProxy 接收，随后再转发到外网
+            // 反之亦然
+
+            tcpHeader.setSourceIp(tcpHeader.getDestinationIp());
+            tcpHeader.setSourcePort(session.remotePort);
+            tcpHeader.setDestinationIp(PROXY_ADDRESS);
+            tcpHeader.recomputeChecksum();
+
+            ingoing.write(packet, 0, tcpHeader.totalLength());
+        } else {
+            // 否则是即将发往公网的数据包，将它转发给我们的 TCP 代理
+            NatSession session = sessionManager.pickSession(
+                    tcpHeader.getSourcePort(),
+                    tcpHeader.getDestinationIp(),
+                    tcpHeader.getDestinationPort());
+
+            /*if (session.remoteHost == null) {
+                String host = HttpHeaderParser.parseHost(packet,
+                        tcpHeader.tcpDataOffset(), tcpHeader.tcpDataLength());
+                if (host == null) {
+                    host = tcpHeader.getDestinationIpAddress().getHostAddress();
+                }
+
+                session.remoteHost = host;
+            }
+
+            Log.v(TAG, "Host: " + session.remoteHost);
+
+            if (session.proxy == null) {
+                String proxy = pac.findProxyForUrl(null, session.remoteHost);
+                if (proxy == null) {
+                    proxy = "DIRECT";
+                }
+
+                session.proxy = proxy;
+            }*/
+
+            //tcpHeader.setSourceIp(tcpHeader.getDestinationIp());//好像没必要？
+            tcpHeader.setDestinationIp(PROXY_ADDRESS);
+            tcpHeader.setDestinationPort(tcpProxy.port());
+            tcpHeader.recomputeChecksum();
+
+            // Log.v(TAG, "redirected " + iPv4Header + " " + tcpHeader);
+
+            ingoing.write(packet, 0, tcpHeader.totalLength());
         }
     }
 
     private void onUDPPacketReceived() throws IOException {
+        if (!udpHeader.getSourceIpAddress().equals(PROXY_ADDRESS)) {
+            return;
+        }
 
+        if (udpHeader.getSourcePort() == udpProxy.port()) {
+            // UDP 代理丢回给 VPN 的
+
+            UdpProxySession session = udpProxy.finish(udpHeader.getDestinationPort());
+            if (session == null) {
+                Log.w(TAG, "UDP session invalid");
+                return;
+            }
+
+            udpHeader.setSourceIp(session.getRemoteAddress());
+            udpHeader.setSourcePort(session.getRemotePort());
+            udpHeader.recomputeChecksum();
+
+            ingoing.write(packet, 0, udpHeader.totalLength());
+        } else {
+            // 发出去前被 VPN 截获的
+
+            udpProxy.prepare(udpHeader.getSourcePort(),
+                    udpHeader.getDestinationIpAddress(),
+                    udpHeader.getDestinationPort());
+
+            udpHeader.setDestinationIp(PROXY_ADDRESS);
+            udpHeader.setDestinationPort(udpProxy.port());
+            udpHeader.recomputeChecksum();
+
+            ingoing.write(packet, 0, udpHeader.totalLength());
+        }
     }
 
 }

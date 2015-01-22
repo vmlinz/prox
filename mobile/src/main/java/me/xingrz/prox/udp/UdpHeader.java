@@ -16,13 +16,14 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-package me.xingrz.prox.tcpip;
+package me.xingrz.prox.udp;
 
-import me.xingrz.prox.util.NumericUtils;
+import me.xingrz.prox.ip.IPv4Header;
+import me.xingrz.prox.ip.NumericUtils;
 
-public class UDPHeader extends IPv4Header {
+public class UdpHeader extends IPv4Header {
 
-    public UDPHeader(byte[] packet) {
+    public UdpHeader(byte[] packet) {
         super(packet);
     }
 
@@ -34,19 +35,19 @@ public class UDPHeader extends IPv4Header {
         return super.offset() + ipHeaderLength();
     }
 
-    public short getSourcePort() {
+    public int getSourcePort() {
         return NumericUtils.readShort(packet, offset());
     }
 
-    public void setSourcePort(short port) {
+    public void setSourcePort(int port) {
         NumericUtils.writeShort(packet, offset(), port);
     }
 
-    public short getDestinationPort() {
+    public int getDestinationPort() {
         return NumericUtils.readShort(packet, offset() + 2);
     }
 
-    public void setDestinationPort(short port) {
+    public void setDestinationPort(int port) {
         NumericUtils.writeShort(packet, offset() + 2, port);
     }
 
@@ -63,7 +64,7 @@ public class UDPHeader extends IPv4Header {
     }
 
     public short getUdpHeaderChecksum() {
-        return NumericUtils.readShort(packet, offset() + 7);
+        return (short) NumericUtils.readShort(packet, offset() + 7);
     }
 
     public void setUdpHeaderChecksum(short checksum) {
