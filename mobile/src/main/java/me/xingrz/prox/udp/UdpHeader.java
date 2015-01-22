@@ -52,7 +52,7 @@ public class UdpHeader extends IPv4Header {
     }
 
     public int udpHeaderLength() {
-        return NumericUtils.readShort(packet, offset() + 4);
+        return 8;
     }
 
     public int udpDataOffset() {
@@ -88,7 +88,7 @@ public class UdpHeader extends IPv4Header {
 
     @Override
     public String toString() {
-        return String.format("UDP[srcPort:%s, dstPort:%s, length:%s]",
+        return String.format("UDP[srcPort:%s, dstPort:%s, dataLength:%s]",
                 getSourcePort(), getDestinationPort(), udpDataLength());
     }
 
