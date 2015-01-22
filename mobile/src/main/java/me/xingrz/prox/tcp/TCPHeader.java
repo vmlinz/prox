@@ -16,9 +16,10 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-package me.xingrz.prox.tcpip;
+package me.xingrz.prox.tcp;
 
-import me.xingrz.prox.util.NumericUtils;
+import me.xingrz.prox.ip.IPv4Header;
+import me.xingrz.prox.ip.NumericUtils;
 
 /**
  * https://en.wikipedia.org/wiki/Transmission_Control_Protocol#TCP_segment_structure
@@ -45,19 +46,19 @@ public class TCPHeader extends IPv4Header {
         return super.offset() + ipHeaderLength();
     }
 
-    public short getSourcePort() {
+    public int getSourcePort() {
         return NumericUtils.readShort(packet, offset());
     }
 
-    public void setSourcePort(short port) {
+    public void setSourcePort(int port) {
         NumericUtils.writeShort(packet, offset(), port);
     }
 
-    public short getDestinationPort() {
+    public int getDestinationPort() {
         return NumericUtils.readShort(packet, offset() + 2);
     }
 
-    public void setDestinationPort(short port) {
+    public void setDestinationPort(int port) {
         NumericUtils.writeShort(packet, offset() + 2, port);
     }
 
@@ -94,7 +95,7 @@ public class TCPHeader extends IPv4Header {
     }
 
     public short getTcpHeaderChecksum() {
-        return NumericUtils.readShort(packet, offset() + 16);
+        return (short) NumericUtils.readShort(packet, offset() + 16);
     }
 
     public void setTcpHeaderChecksum(short checksum) {

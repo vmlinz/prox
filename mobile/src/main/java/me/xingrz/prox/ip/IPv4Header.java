@@ -16,12 +16,10 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-package me.xingrz.prox.tcpip;
+package me.xingrz.prox.ip;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
-
-import me.xingrz.prox.util.NumericUtils;
 
 /**
  * https://en.wikipedia.org/wiki/IPv4#Header
@@ -108,7 +106,7 @@ public class IPv4Header extends IPHeader {
     }
 
     public short getIpHeaderChecksum() {
-        return NumericUtils.readShort(packet, 10);
+        return (short) NumericUtils.readShort(packet, 10);
     }
 
     public void setIpHeaderChecksum(short checksum) {
@@ -151,10 +149,10 @@ public class IPv4Header extends IPHeader {
 
     @Override
     public String toString() {
-        return String.format("IPv4[headerLen:%s, totalLen:%s,  protocol:%s, srcIp:%s, dstIp:%s",
+        return String.format("IPv4[headerLen:%s, totalLen:%s,  protocol:%s, srcIp:%s, dstIp:%s]",
                 ipHeaderLength(), totalLength(), protocol(),
-                getSourceIpAddress().getHostAddress(),
-                getDestinationIpAddress().getHostAddress());
+                IpUtils.toString(getSourceIp()),
+                IpUtils.toString(getDestinationIp()));
     }
 
 }

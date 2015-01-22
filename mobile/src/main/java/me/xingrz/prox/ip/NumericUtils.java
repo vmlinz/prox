@@ -16,21 +16,21 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-package me.xingrz.prox.util;
+package me.xingrz.prox.ip;
 
 /**
  * @author XiNGRZ
  */
 public class NumericUtils {
 
-    public static short readShort(byte[] data, int offset) {
-        return ((short) (((data[offset] & 0xff) << 0x08)
-                | (data[offset + 1] & 0xff)));
+    public static int readShort(byte[] data, int offset) {
+        return ((data[offset] & 0xff) << 0x08)
+                | (data[offset + 1] & 0xff);
     }
 
-    public static void writeShort(byte[] data, int offset, short value) {
-        data[offset] = (byte) (value >> 0x08);
-        data[offset + 1] = (byte) value;
+    public static void writeShort(byte[] data, int offset, int value) {
+        data[offset] = (byte) ((value >> 0x08) & 0xff);
+        data[offset + 1] = (byte) (value & 0xff);
     }
 
     public static int readInt(byte[] data, int offset) {

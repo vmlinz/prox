@@ -16,18 +16,24 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-package me.xingrz.prox.nat;
+package me.xingrz.prox.ip;
 
-public class NatSession {
+public class IpUtils {
 
-    public int remoteIp;
+    public static String toString(int ip) {
+        return String.format("%s.%s.%s.%s",
+                (ip >> 24) & 0xff,
+                (ip >> 16) & 0xff,
+                (ip >> 8) & 0xff,
+                ip & 0xff);
+    }
 
-    public short remotePort;
-
-    public String remoteHost;
-
-    public String proxy;
-
-    public long lastTimeNs = System.nanoTime();
+    public static int toInteger(String ip) {
+        String [] split = ip.split(".");
+        return (Integer.parseInt(split[0]) << 24)
+                | (Integer.parseInt(split[1]) << 16)
+                | (Integer.parseInt(split[2]) << 8)
+                | (Integer.parseInt(split[3]));
+    }
 
 }

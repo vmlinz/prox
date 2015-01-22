@@ -16,11 +16,16 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-package me.xingrz.prox.nat;
+package me.xingrz.prox.tcp;
 
+import android.util.Log;
 import android.util.SparseArray;
 
+import me.xingrz.prox.ip.IpUtils;
+
 public class NatSessionManager {
+
+    private static final String TAG = "NatSessionManager";
 
     private static final int MAX_SESSION_COUNT = 60;
 
@@ -38,11 +43,11 @@ public class NatSessionManager {
 
     private final SparseArray<NatSession> sessions = new SparseArray<>();
 
-    public NatSession getSession(short port) {
-        return sessions.get(port);
+    public NatSession getSession(int localPort) {
+        return sessions.get(localPort);
     }
 
-    public NatSession createSession(short port, int remoteIp, short remotePort) {
+    public NatSession createSession(int localPort, int remoteIp, int remotePort) {
         if (sessions.size() > MAX_SESSION_COUNT) {
             cleanExpired();
         }
@@ -51,16 +56,17 @@ public class NatSessionManager {
         session.remoteIp = remoteIp;
         session.remotePort = remotePort;
 
-        sessions.put(port, session);
+        sessions.put(localPort, session);
 
         return session;
     }
 
-    public NatSession pickSession(short port, int remoteIp, short remotePort) {
-        NatSession session = getSession(port);
+    public NatSession pickSession(int localPort, int remoteIp, int remotePort) {
+        NatSession session = getSession(localPort);
 
         if (session == null || session.remoteIp != remoteIp || session.remotePort != remotePort) {
-            session = createSession(port, remoteIp, remotePort);
+            session = createSession(localPort, remoteIp, remotePort);
+            Log.v(TAG, "new session from " + localPort + " to " + IpUtils.toString(remoteIp) + ":" + remotePort);
         }
 
         session.lastTimeNs = System.nanoTime();

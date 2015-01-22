@@ -16,41 +16,43 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-package me.xingrz.prox.server;
+package me.xingrz.prox.tcp.tunnel;
 
 import android.util.Log;
 
 import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.nio.channels.SelectionKey;
+import java.nio.ByteBuffer;
 import java.nio.channels.Selector;
-import java.nio.channels.ServerSocketChannel;
+import java.nio.channels.SocketChannel;
 
-public class TCPProxy implements Runnable {
+public class IncomingTunnel extends Tunnel {
 
-    private static final String TAG = "TCPProxyServer";
-
-    private Selector selector;
-    private ServerSocketChannel channel;
-
-    public TCPProxy() throws IOException {
-        selector = Selector.open();
-
-        channel = ServerSocketChannel.open();
-        channel.configureBlocking(false);
-        channel.socket().bind(new InetSocketAddress(0));
-        channel.register(selector, SelectionKey.OP_ACCEPT);
-
-        Log.v(TAG, "running on " + port());
-    }
-
-    public short port() {
-        return (short) channel.socket().getLocalPort();
+    public IncomingTunnel(SocketChannel innerChannel, Selector selector) {
+        super(innerChannel, selector);
     }
 
     @Override
-    public void run() {
+    protected void onConnected(ByteBuffer buffer) throws IOException {
 
     }
 
+    @Override
+    protected boolean isTunnelEstablished() {
+        return false;
+    }
+
+    @Override
+    protected void afterReceived(ByteBuffer buffer) throws IOException {
+        Log.v("Incoming", new String(buffer.array()));
+    }
+
+    @Override
+    protected void beforeSend(ByteBuffer buffer) throws IOException {
+
+    }
+
+    @Override
+    protected void onDispose() {
+
+    }
 }
