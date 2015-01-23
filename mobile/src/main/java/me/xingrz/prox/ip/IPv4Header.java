@@ -107,11 +107,11 @@ public class IPv4Header extends IPHeader {
         System.arraycopy(address.getAddress(), 0, packet, 16, 4);
     }
 
-    public short getIpHeaderChecksum() {
-        return (short) NumericUtils.readShort(packet, 10);
+    public int getIpHeaderChecksum() {
+        return NumericUtils.readShort(packet, 10);
     }
 
-    public void setIpHeaderChecksum(short checksum) {
+    public void setIpHeaderChecksum(int checksum) {
         NumericUtils.writeShort(packet, 10, checksum);
     }
 
@@ -123,30 +123,20 @@ public class IPv4Header extends IPHeader {
         setIpHeaderChecksum(checksum(0, 0, ipHeaderLength()));
     }
 
-    protected int sum(int offset, int length) {
-        int sum = 0;
-
-        while (length > 1) {
-            sum += NumericUtils.readShort(packet, offset) & 0xffff;
-            offset += 2;
-            length -= 2;
+    protected short checksum(long sum, int offset, int length) {
+        for (int i = length - 1; i >= 0; i--) {
+            if ((length - 1 - i) % 2 == 0) {
+                sum += packet[offset + i] & 0xFF;
+            } else {
+                sum += (packet[offset + i] << 8) & 0xFF00;
+            }
         }
-
-        if (length > 0) {
-            sum += (packet[offset] & 0xff) << 8;
-        }
-
-        return sum;
-    }
-
-    protected short checksum(int sum, int offset, int length) {
-        sum += sum(offset, length);
 
         while ((sum >> 16) > 0) {
-            sum = (sum & 0xffff) + (sum >> 16);
+            sum = (sum >> 16) + (sum & 0xFFFF);
         }
 
-        return (short) ~sum;
+        return (short) (0xFFFF - sum);
     }
 
     public void writeTo(OutputStream stream) throws IOException {

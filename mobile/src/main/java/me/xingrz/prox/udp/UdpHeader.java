@@ -18,6 +18,7 @@
 
 package me.xingrz.prox.udp;
 
+import me.xingrz.prox.ip.IPHeader;
 import me.xingrz.prox.ip.IPv4Header;
 import me.xingrz.prox.ip.NumericUtils;
 
@@ -63,27 +64,29 @@ public class UdpHeader extends IPv4Header {
         return totalLength() - udpDataOffset();
     }
 
-    public short getUdpHeaderChecksum() {
-        return (short) NumericUtils.readShort(packet, offset() + 7);
+    public int getUdpHeaderChecksum() {
+        return NumericUtils.readShort(packet, offset() + 6);
     }
 
-    public void setUdpHeaderChecksum(short checksum) {
-        NumericUtils.writeShort(packet, offset() + 7, checksum);
+    public void setUdpHeaderChecksum(int checksum) {
+        NumericUtils.writeShort(packet, offset() + 6, checksum);
     }
 
     @Override
     public void recomputeChecksum() {
         super.recomputeChecksum();
 
-        int ipDataLength = ipDataLength();
-        if (ipDataLength < 0) {
-            return;
-        }
+        setUdpHeaderChecksum(0);
 
-        int sum = sum(12, 8) + (protocol() & 0xff) + ipDataLength;
+        long pseudo = 0;
+        pseudo += getSourceIp() & 0xffff;
+        pseudo += (getSourceIp() >> 16) & 0xffff;
+        pseudo += getDestinationIp() & 0xffff;
+        pseudo += (getDestinationIp() >> 16) & 0xffff;
+        pseudo += IPHeader.PROTOCOL_UDP;
+        pseudo += udpHeaderLength() + udpDataLength();
 
-        setUdpHeaderChecksum((short) 0);
-        setUdpHeaderChecksum(checksum(sum, offset(), ipDataLength));
+        setUdpHeaderChecksum(checksum(pseudo, ipDataOffset(), ipDataLength()));
     }
 
     @Override

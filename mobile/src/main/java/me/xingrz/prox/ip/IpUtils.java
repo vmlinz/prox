@@ -29,7 +29,7 @@ public class IpUtils {
     }
 
     public static int toInteger(String ip) {
-        String [] split = ip.split(".");
+        String[] split = ip.split(".");
         return (Integer.parseInt(split[0]) << 24)
                 | (Integer.parseInt(split[1]) << 16)
                 | (Integer.parseInt(split[2]) << 8)

@@ -18,6 +18,7 @@
 
 package me.xingrz.prox.tcp;
 
+import me.xingrz.prox.ip.IPHeader;
 import me.xingrz.prox.ip.IPv4Header;
 import me.xingrz.prox.ip.NumericUtils;
 
@@ -98,7 +99,7 @@ public class TCPHeader extends IPv4Header {
         return (short) NumericUtils.readShort(packet, offset() + 16);
     }
 
-    public void setTcpHeaderChecksum(short checksum) {
+    public void setTcpHeaderChecksum(int checksum) {
         NumericUtils.writeShort(packet, offset() + 16, checksum);
     }
 
@@ -106,15 +107,17 @@ public class TCPHeader extends IPv4Header {
     public void recomputeChecksum() {
         super.recomputeChecksum();
 
-        int ipDataLength = ipDataLength();
-        if (ipDataLength < 0) {
-            return;
-        }
+        setTcpHeaderChecksum(0);
 
-        int sum = sum(12, 8) + (protocol() & 0xff) + ipDataLength;
+        long pseudo = 0;
+        pseudo += getSourceIp() & 0xffff;
+        pseudo += (getSourceIp() >> 16) & 0xffff;
+        pseudo += getDestinationIp() & 0xffff;
+        pseudo += (getDestinationIp() >> 16) & 0xffff;
+        pseudo += IPHeader.PROTOCOL_TCP;
+        pseudo += tcpHeaderLength() + tcpDataLength();
 
-        setTcpHeaderChecksum((short) 0);
-        setTcpHeaderChecksum(checksum(sum, offset(), ipDataLength));
+        setTcpHeaderChecksum(checksum(pseudo, tcpDataOffset(), tcpDataLength()));
     }
 
     @Override
