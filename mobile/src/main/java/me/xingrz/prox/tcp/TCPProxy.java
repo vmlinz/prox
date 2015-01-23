@@ -22,19 +22,21 @@ import android.util.Log;
 
 import org.apache.commons.io.IOUtils;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.nio.channels.ClosedSelectorException;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.util.Iterator;
 
+import me.xingrz.prox.ip.IpUtils;
 import me.xingrz.prox.tcp.tunnel.IncomingTunnel;
 import me.xingrz.prox.tcp.tunnel.Tunnel;
-import me.xingrz.prox.ip.IpUtils;
 
-public class TCPProxy implements Runnable {
+public class TCPProxy implements Runnable, Closeable {
 
     private static final String TAG = "TCPProxy";
 
@@ -44,8 +46,6 @@ public class TCPProxy implements Runnable {
     private NatSessionManager sessionManager = NatSessionManager.getInstance();
 
     private Thread thread;
-
-    private volatile boolean running = true;
 
     public TCPProxy() throws IOException {
         selector = Selector.open();
@@ -66,20 +66,17 @@ public class TCPProxy implements Runnable {
         Log.v(TAG, "running on " + port());
     }
 
-    public void stop() {
-        running = false;
+    @Override
+    public void close() {
+        thread.interrupt();
         IOUtils.closeQuietly(selector);
         IOUtils.closeQuietly(serverChannel);
-    }
-
-    public boolean isRunning() {
-        return running;
     }
 
     @Override
     public synchronized void run() {
         try {
-            while (running) {
+            while (true) {
                 selector.select();
                 Iterator<SelectionKey> iterator = selector.selectedKeys().iterator();
                 while (iterator.hasNext()) {
@@ -101,10 +98,11 @@ public class TCPProxy implements Runnable {
                     }
                 }
             }
+        } catch (ClosedSelectorException ignored) {
         } catch (IOException e) {
             Log.w(TAG, "running tcp proxy error", e);
         } finally {
-            stop();
+            close();
         }
     }
 

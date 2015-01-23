@@ -18,11 +18,14 @@
 
 package me.xingrz.prox.udp;
 
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.util.LruCache;
 
 import org.apache.commons.io.IOUtils;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -31,24 +34,52 @@ import java.nio.channels.DatagramChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.util.Iterator;
+import java.util.concurrent.TimeUnit;
 
-public class UdpProxy implements Runnable {
+import me.xingrz.prox.ProxVpnService;
+
+public class UdpProxy implements Runnable, Closeable {
 
     private static final String TAG = "UdpProxy";
 
-    private final LruCache<Integer, UdpProxySession> sessions = new LruCache<Integer, UdpProxySession>(200) {
+    private static final long UDP_SESSION_TIMEOUT_MS = TimeUnit.SECONDS.toMillis(30);
+
+    private final LruCache<Integer, UdpProxySession> sessions = new LruCache<Integer, UdpProxySession>(20) {
         @Override
         protected void entryRemoved(boolean evicted, Integer key, UdpProxySession oldValue, UdpProxySession newValue) {
             oldValue.close();
+            if (oldValue.isFinished()) {
+                Log.v(TAG, "Removed finished UDP session local:" + key);
+            } else {
+                Log.v(TAG, "Terminated UDP session local:" + key);
+            }
         }
     };
 
     private final Selector selector;
     private final DatagramChannel serverChannel;
 
+    private final ByteBuffer buffer = ByteBuffer.allocate(0xFFFF);
+
     private final Thread thread;
 
-    private final ByteBuffer buffer = ByteBuffer.allocate(0xFFFF);
+    private final Handler collector = new Handler(Looper.getMainLooper());
+
+    private final Runnable clean = new Runnable() {
+        @Override
+        public void run() {
+            long now = System.currentTimeMillis();
+
+            for (UdpProxySession session : sessions.snapshot().values()) {
+                if (now - session.createdAt >= UDP_SESSION_TIMEOUT_MS) {
+                    sessions.remove(session.getSourcePort());
+                    Log.v(TAG, "Cleaned expired UDP session local:" + session.getSourcePort());
+                }
+            }
+
+            collector.postDelayed(clean, UDP_SESSION_TIMEOUT_MS);
+        }
+    };
 
     public UdpProxy() throws IOException {
         selector = Selector.open();
@@ -58,15 +89,19 @@ public class UdpProxy implements Runnable {
         serverChannel.socket().bind(new InetSocketAddress(0));
         serverChannel.register(selector, SelectionKey.OP_READ);
 
-        thread = new Thread(this, "DNS Proxy");
+        thread = new Thread(this, "UDPProxy");
         thread.start();
+
+        Log.d(TAG, "UDP proxy running on " + port());
+
+        collector.postDelayed(clean, UDP_SESSION_TIMEOUT_MS);
     }
 
-    public void stop() {
-        thread.interrupt();
+    @Override
+    public void close() {
         sessions.evictAll();
-        IOUtils.closeQuietly(selector);
-        IOUtils.closeQuietly(serverChannel);
+        thread.interrupt();
+        collector.removeCallbacksAndMessages(null);
     }
 
     public int port() {
@@ -89,10 +124,13 @@ public class UdpProxy implements Runnable {
                 }
             }
         } catch (IOException e) {
-            Log.w(TAG, "running dns proxy error", e);
-        } finally {
-            stop();
+            Log.w(TAG, "Running UDP proxy error", e);
         }
+
+        IOUtils.closeQuietly(selector);
+        IOUtils.closeQuietly(serverChannel);
+
+        Log.v(TAG, "UDP server closed");
     }
 
     /**
@@ -107,6 +145,12 @@ public class UdpProxy implements Runnable {
     public UdpProxySession createSession(int sourcePort, InetAddress remoteAddress, int remotePort) throws IOException {
         UdpProxySession session = new UdpProxySession(this, sourcePort, remoteAddress, remotePort);
         sessions.put(sourcePort, session);
+
+        Log.v(TAG, "Created UDP session local:" + sourcePort +
+                " -> proxy:" + port() +
+                " -> proxy:" + session.socket().getLocalPort() +
+                " -> " + session.getRemoteAddress().getHostAddress() + ":" + session.getRemotePort());
+
         return session;
     }
 
@@ -120,33 +164,46 @@ public class UdpProxy implements Runnable {
     private void accept(DatagramChannel localChannel) throws IOException {
         buffer.clear();
 
-        InetSocketAddress localAddress = (InetSocketAddress) localChannel.receive(buffer);
-        if (localAddress == null) {
-            Log.w(TAG, "no address for packet, ignored");
+        InetSocketAddress source = (InetSocketAddress) localChannel.receive(buffer);
+        if (source == null) {
+            Log.w(TAG, "no source of packet, ignored");
             return;
         }
 
-        buffer.flip();
+        Log.v(TAG, "Accepted UDP channel from " + source.getPort());
 
-        UdpProxySession session = sessions.get(localAddress.getPort());
+        UdpProxySession session = sessions.get(source.getPort());
         if (session == null) {
             Log.w(TAG, "no session for packet, ignored");
             return;
         }
 
+        buffer.flip();
+
         session.send(buffer);
+
+        Log.v(TAG, "Sent out UDP session local:" + session.getSourcePort() +
+                " -> proxy:" + port() +
+                " -> proxy:" + session.socket().getLocalPort() +
+                " -> " + session.getRemoteAddress().getHostAddress() + ":" + session.getRemotePort());
     }
 
     /**
      * 将公网的 UDP 返回反哺回给 VPN 网关
      *
-     * @param buffer 返回数据
+     * @param buffer  返回数据
      * @param session 对应的会话
      * @throws IOException
      */
     void feedback(ByteBuffer buffer, UdpProxySession session) throws IOException {
         InetSocketAddress address = new InetSocketAddress(
-                serverChannel.socket().getLocalAddress(), session.getSourcePort());
+                ProxVpnService.FAKE_REMOTE_ADDRESS, session.getSourcePort());
+
+        Log.v(TAG, "Received in UDP session " +
+                address.getHostString() + ":" + session.getSourcePort() +
+                " <- " + serverChannel.socket().getLocalAddress().getHostAddress() + ":" + port() +
+                " <- proxy:" + session.socket().getLocalPort() +
+                " <- " + session.getRemoteAddress().getHostAddress() + ":" + session.getRemotePort());
 
         serverChannel.send(buffer, address);
     }
@@ -158,6 +215,7 @@ public class UdpProxy implements Runnable {
      * @return 会话对象
      */
     public UdpProxySession finishSession(int sourcePort) {
+        Log.v(TAG, "Finished UDP session local:" + sourcePort);
         return sessions.remove(sourcePort);
     }
 

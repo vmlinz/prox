@@ -22,17 +22,19 @@ import android.util.Log;
 
 import org.apache.commons.io.IOUtils;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.nio.channels.ClosedSelectorException;
 import java.nio.channels.DatagramChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.util.Iterator;
 
-public class UdpProxySession implements Runnable {
+public class UdpProxySession implements Runnable, Closeable {
 
     private static final String TAG = "UdpProxySession";
 
@@ -46,11 +48,13 @@ public class UdpProxySession implements Runnable {
     private final Selector selector;
     private final DatagramChannel serverChannel;
 
-    private final Thread thread;
-
     private final ByteBuffer buffer = ByteBuffer.allocate(0xFFFF);
 
-    private volatile boolean running = true;
+    private final Thread thread;
+
+    private boolean finished = false;
+
+    public final long createdAt = System.currentTimeMillis();
 
     public UdpProxySession(UdpProxy udpProxy, int sourcePort,
                            InetAddress remoteAddress, int remotePort) throws IOException {
@@ -68,7 +72,7 @@ public class UdpProxySession implements Runnable {
         serverChannel.socket().bind(new InetSocketAddress(0));
         serverChannel.register(selector, SelectionKey.OP_READ);
 
-        thread = new Thread(this, "DNS Proxy Session");
+        thread = new Thread(this, "UDPSession/" + sourcePort);
         thread.start();
     }
 
@@ -80,16 +84,21 @@ public class UdpProxySession implements Runnable {
         serverChannel.send(buffer, new InetSocketAddress(remoteAddress, remotePort));
     }
 
+    @Override
     public void close() {
-        running = false;
+        thread.interrupt();
         IOUtils.closeQuietly(selector);
         IOUtils.closeQuietly(serverChannel);
+    }
+
+    public boolean isFinished() {
+        return finished;
     }
 
     @Override
     public synchronized void run() {
         try {
-            while (running) {
+            while (true) {
                 selector.select();
                 Iterator<SelectionKey> iterator = selector.selectedKeys().iterator();
                 while (iterator.hasNext()) {
@@ -101,16 +110,19 @@ public class UdpProxySession implements Runnable {
                     }
                 }
             }
+        } catch (ClosedSelectorException e) {
+            Log.v(TAG, "UDP session local:" + sourcePort + " closed");
         } catch (IOException e) {
-            Log.w(TAG, "running dns proxy error", e);
-        } finally {
-            close();
+            Log.w(TAG, "UDP session local:" + sourcePort + " error", e);
         }
     }
 
     private void onReadable(DatagramChannel channel) throws IOException {
         buffer.clear();
         channel.receive(buffer);
+
+        finished = true;
+
         buffer.flip();
         udpProxy.feedback(buffer, this);
     }

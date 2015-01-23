@@ -46,15 +46,23 @@ public class ProxVpnService extends VpnService implements Runnable {
     private static final String TAG = "ProxVpnService";
 
 
-    private static InetAddress getProxyAddress() {
+    private static InetAddress getAddressQuietly(String address) {
         try {
-            return InetAddress.getByName("192.168.0.1");
+            return InetAddress.getByName(address);
         } catch (UnknownHostException e) {
             return null;
         }
     }
 
-    private static final InetAddress PROXY_ADDRESS = getProxyAddress();
+    /**
+     * VPN 网关所运行的地址
+     */
+    public static final InetAddress PROXY_ADDRESS = getAddressQuietly("10.80.19.20");
+
+    /**
+     * 入站数据包发往此地址可被 VPN 截获
+     */
+    public static final InetAddress FAKE_REMOTE_ADDRESS = getAddressQuietly("10.80.7.20");
 
 
     private static ProxVpnService instance;
@@ -114,12 +122,12 @@ public class ProxVpnService extends VpnService implements Runnable {
 
         configUrl = intent.getStringExtra(EXTRA_PAC_URL);
 
-        thread = new Thread(this, "VPN Thread");
+        thread = new Thread(this, "VPNServer");
         thread.start();
 
         Log.d(TAG, "VPN service started with PAC: " + configUrl);
 
-        return START_STICKY;
+        return START_NOT_STICKY;
     }
 
     @Override
@@ -144,15 +152,15 @@ public class ProxVpnService extends VpnService implements Runnable {
             pac = ProxAutoConfig.fromUrl(configUrl);
             Log.d(TAG, "PAC loaded");
 
+            intf = establish();
+            Log.d(TAG, "VPN interface established");
+
             tcpProxy = new TCPProxy();
             tcpProxy.start();
             Log.d(TAG, "TCP proxy started");
 
             udpProxy = new UdpProxy();
-            Log.d(TAG, "DNS proxy started");
-
-            intf = establish();
-            Log.d(TAG, "VPN interface established");
+            Log.d(TAG, "UDP proxy started");
 
             ingoing = new FileOutputStream(intf.getFileDescriptor());
             outgoing = new FileInputStream(intf.getFileDescriptor());
@@ -176,10 +184,12 @@ public class ProxVpnService extends VpnService implements Runnable {
             IOUtils.closeQuietly(intf);
             intf = null;
 
-            tcpProxy.stop();
-            udpProxy.stop();
+            IOUtils.closeQuietly(tcpProxy);
+            IOUtils.closeQuietly(udpProxy);
 
-            pac.destroy();
+            if (pac != null) {
+                pac.destroy();
+            }
         }
     }
 
@@ -205,7 +215,7 @@ public class ProxVpnService extends VpnService implements Runnable {
         //Log.v(TAG, iPv4Header.toString());
         switch (iPv4Header.protocol()) {
             case IPHeader.PROTOCOL_TCP:
-                onTCPPacketReceived();
+                //onTCPPacketReceived();
                 break;
             case IPHeader.PROTOCOL_UDP:
                 onUDPPacketReceived();
@@ -267,7 +277,7 @@ public class ProxVpnService extends VpnService implements Runnable {
                 session.proxy = proxy;
             }*/
 
-            //tcpHeader.setSourceIp(tcpHeader.getDestinationIp());//好像没必要？
+            tcpHeader.setSourceIp(tcpHeader.getDestinationIp()); // 有必要的
             tcpHeader.setDestinationIp(PROXY_ADDRESS);
             tcpHeader.setDestinationPort(tcpProxy.port());
             tcpHeader.recomputeChecksum();
@@ -276,6 +286,9 @@ public class ProxVpnService extends VpnService implements Runnable {
     }
 
     private void onUDPPacketReceived() throws IOException {
+        Log.v(TAG, iPv4Header.toString());
+        Log.v(TAG, udpHeader.toString());
+
         if (!udpHeader.getSourceIpAddress().equals(PROXY_ADDRESS)) {
             return;
         }
@@ -291,6 +304,7 @@ public class ProxVpnService extends VpnService implements Runnable {
 
             udpHeader.setSourceIp(session.getRemoteAddress());
             udpHeader.setSourcePort(session.getRemotePort());
+            udpHeader.setDestinationIp(PROXY_ADDRESS);
             udpHeader.recomputeChecksum();
             udpHeader.writeTo(ingoing);
         } else {
@@ -303,7 +317,7 @@ public class ProxVpnService extends VpnService implements Runnable {
             // 保护外网端通道不被 VPN 拦截
             protect(session.socket());
 
-            //
+            udpHeader.setSourceIp(udpHeader.getDestinationIp()); // 有必要
             udpHeader.setDestinationIp(PROXY_ADDRESS);
             udpHeader.setDestinationPort(udpProxy.port());
             udpHeader.recomputeChecksum();
