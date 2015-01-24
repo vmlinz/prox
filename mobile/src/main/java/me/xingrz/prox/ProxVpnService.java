@@ -35,8 +35,8 @@ import me.xingrz.prox.ip.IPHeader;
 import me.xingrz.prox.ip.IPv4Header;
 import me.xingrz.prox.tcp.NatSession;
 import me.xingrz.prox.tcp.NatSessionManager;
-import me.xingrz.prox.tcp.TCPHeader;
-import me.xingrz.prox.tcp.TCPProxy;
+import me.xingrz.prox.tcp.TcpHeader;
+import me.xingrz.prox.tcp.TcpProxy;
 import me.xingrz.prox.udp.UdpHeader;
 import me.xingrz.prox.udp.UdpProxy;
 import me.xingrz.prox.udp.UdpProxySession;
@@ -89,10 +89,10 @@ public class ProxVpnService extends VpnService implements Runnable {
     private IPHeader ipHeader;
     private IPv4Header iPv4Header;
 
-    private TCPHeader tcpHeader;
+    private TcpHeader tcpHeader;
     private UdpHeader udpHeader;
 
-    private TCPProxy tcpProxy;
+    private TcpProxy tcpProxy;
     private UdpProxy udpProxy;
 
     private NatSessionManager sessionManager;
@@ -108,7 +108,7 @@ public class ProxVpnService extends VpnService implements Runnable {
         ipHeader = new IPHeader(packet);
         iPv4Header = new IPv4Header(packet);
 
-        tcpHeader = new TCPHeader(packet);
+        tcpHeader = new TcpHeader(packet);
         udpHeader = new UdpHeader(packet);
 
         sessionManager = NatSessionManager.getInstance();
@@ -155,7 +155,7 @@ public class ProxVpnService extends VpnService implements Runnable {
             intf = establish();
             Log.d(TAG, "VPN interface established");
 
-            tcpProxy = new TCPProxy();
+            tcpProxy = new TcpProxy();
             tcpProxy.start();
             Log.d(TAG, "TCP proxy started");
 

@@ -36,7 +36,7 @@ import me.xingrz.prox.ip.IpUtils;
 import me.xingrz.prox.tcp.tunnel.IncomingTunnel;
 import me.xingrz.prox.tcp.tunnel.Tunnel;
 
-public class TCPProxy implements Runnable, Closeable {
+public class TcpProxy implements Runnable, Closeable {
 
     private static final String TAG = "TCPProxy";
 
@@ -47,7 +47,7 @@ public class TCPProxy implements Runnable, Closeable {
 
     private Thread thread;
 
-    public TCPProxy() throws IOException {
+    public TcpProxy() throws IOException {
         selector = Selector.open();
 
         serverChannel = ServerSocketChannel.open();

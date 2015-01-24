@@ -27,7 +27,7 @@ import me.xingrz.prox.ip.NumericUtils;
  *
  * @author XiNGRZ
  */
-public class TCPHeader extends IPv4Header {
+public class TcpHeader extends IPv4Header {
 
     private static final byte FLAG_ACK = 0x10;
     private static final byte FLAG_PSH = 0x08;
@@ -35,7 +35,7 @@ public class TCPHeader extends IPv4Header {
     private static final byte FLAG_SYN = 0x02;
     private static final byte FLAG_FIN = 0x01;
 
-    public TCPHeader(byte[] packet) {
+    public TcpHeader(byte[] packet) {
         super(packet);
     }
 
@@ -95,8 +95,8 @@ public class TCPHeader extends IPv4Header {
         return (packet[offset() + 13] & FLAG_FIN) == FLAG_FIN;
     }
 
-    public short getTcpHeaderChecksum() {
-        return (short) NumericUtils.readShort(packet, offset() + 16);
+    public int getTcpHeaderChecksum() {
+        return NumericUtils.readShort(packet, offset() + 16);
     }
 
     public void setTcpHeaderChecksum(int checksum) {
