@@ -22,91 +22,82 @@ import android.util.Log;
 
 import org.apache.commons.io.IOUtils;
 
-import java.io.Closeable;
 import java.io.IOException;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.nio.channels.ClosedSelectorException;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
-import java.util.Iterator;
+import java.util.concurrent.TimeUnit;
 
-import me.xingrz.prox.ip.IpUtils;
+import me.xingrz.prox.AbstractTransportProxy;
 import me.xingrz.prox.tcp.tunnel.IncomingTunnel;
+import me.xingrz.prox.tcp.tunnel.RawTunnel;
 import me.xingrz.prox.tcp.tunnel.Tunnel;
 
-public class TcpProxy implements Runnable, Closeable {
+public class TcpProxy extends AbstractTransportProxy<ServerSocketChannel, TcpProxySession> {
 
     private static final String TAG = "TCPProxy";
 
-    private Selector selector;
-    private ServerSocketChannel serverChannel;
-
-    private NatSessionManager sessionManager = NatSessionManager.getInstance();
-
-    private Thread thread;
+    private static final int TCP_SESSION_MAX_COUNT = 60;
+    private static final long TCP_SESSION_TIMEOUT_MS = TimeUnit.SECONDS.toMillis(60);
 
     public TcpProxy() throws IOException {
-        selector = Selector.open();
-
-        serverChannel = ServerSocketChannel.open();
-        serverChannel.configureBlocking(false);
-        serverChannel.socket().bind(new InetSocketAddress(0));
-        serverChannel.register(selector, SelectionKey.OP_ACCEPT);
+        super(TCP_SESSION_MAX_COUNT, TCP_SESSION_TIMEOUT_MS, TAG);
     }
 
+    @Override
+    protected ServerSocketChannel createChannel(Selector selector) throws IOException {
+        ServerSocketChannel channel = ServerSocketChannel.open();
+        channel.configureBlocking(false);
+        channel.socket().bind(new InetSocketAddress(0));
+        channel.register(selector, SelectionKey.OP_ACCEPT);
+        return channel;
+    }
+
+    @Override
     public int port() {
         return serverChannel.socket().getLocalPort();
     }
 
-    public void start() {
-        thread = new Thread(this, "TCP Proxy Thread");
-        thread.start();
-        Log.v(TAG, "running on " + port());
-    }
-
     @Override
-    public void close() {
-        thread.interrupt();
-        IOUtils.closeQuietly(selector);
-        IOUtils.closeQuietly(serverChannel);
-    }
-
-    @Override
-    public synchronized void run() {
-        try {
-            while (true) {
-                selector.select();
-                Iterator<SelectionKey> iterator = selector.selectedKeys().iterator();
-                while (iterator.hasNext()) {
-                    SelectionKey key = iterator.next();
-                    iterator.remove();
-
-                    if (!key.isValid()) {
-                        continue;
-                    }
-
-                    if (key.isReadable()) {
-                        ((Tunnel) key.attachment()).onReadable(key);
-                    } else if (key.isWritable()) {
-                        ((Tunnel) key.attachment()).onWritable(key);
-                    } else if (key.isConnectable()) {
-                        ((Tunnel) key.attachment()).onConnectible();
-                    } else if (key.isAcceptable()) {
-                        onAccepted(key);
-                    }
-                }
-            }
-        } catch (ClosedSelectorException ignored) {
-        } catch (IOException e) {
-            Log.w(TAG, "running tcp proxy error", e);
-        } finally {
-            close();
+    protected void onSelected(SelectionKey key) throws IOException {
+        if (key.isReadable()) {
+            ((Tunnel) key.attachment()).onReadable(key);
+        } else if (key.isWritable()) {
+            ((Tunnel) key.attachment()).onWritable(key);
+        } else if (key.isConnectable()) {
+            ((Tunnel) key.attachment()).onConnectible();
+        } else if (key.isAcceptable()) {
+            onAccepted();
         }
     }
 
-    private void onAccepted(SelectionKey key) {
+    @Override
+    protected TcpProxySession createSession(int sourcePort, InetAddress remoteAddress, int remotePort)
+            throws IOException {
+        return new TcpProxySession(sourcePort, remoteAddress, remotePort);
+    }
+
+    @Override
+    public TcpProxySession pickSession(int sourcePort, InetAddress remoteAddress, int remotePort)
+            throws IOException {
+        TcpProxySession session = getSession(sourcePort);
+
+        if (session == null
+                || !session.getRemoteAddress().equals(remoteAddress)
+                || session.getRemotePort() != remotePort) {
+            session = createSession(sourcePort, remoteAddress, remotePort);
+            Log.v(TAG, "new session from " + sourcePort + " to "
+                    + remoteAddress.getHostAddress() + ":" + remotePort);
+        }
+
+        session.active();
+        return session;
+    }
+
+    private void onAccepted() {
         Tunnel localTunnel = null;
 
         try {
@@ -115,25 +106,24 @@ public class TcpProxy implements Runnable, Closeable {
 
             Log.d(TAG, "accepted from " + localChannel.socket().getPort());
 
-            NatSession session = sessionManager.getSession(localChannel.socket().getPort());
+            TcpProxySession session = getSession(localChannel.socket().getPort());
             if (session == null) {
                 Log.w(TAG, "no session for this socket, ignored");
                 IOUtils.closeQuietly(localTunnel);
                 return;
             }
 
-            Log.d(TAG, "session " + IpUtils.toString(session.remoteIp) + ":" + session.remotePort);
+            Log.d(TAG, "session " + session.getRemoteAddress().getHostAddress()
+                    + ":" + session.getRemotePort());
 
-            /*InetSocketAddress destAddress = getDestAddress(localChannel);
-            if (destAddress != null) {
-                Tunnel remoteTunnel = TunnelFactory.createTunnelByConfig(destAddress, selector);
-                remoteTunnel.setBrotherTunnel(localTunnel);//关联兄弟
-                localTunnel.setBrotherTunnel(remoteTunnel);//关联兄弟
-                remoteTunnel.connect(destAddress);//开始连接
-            } else {
-                LocalVpnService.Instance.writeLog("Error: socket(%s:%d) target host is null.", localChannel.socket().getInetAddress().toString(), localChannel.socket().getPort());
-                localTunnel.close();
-            }*/
+            InetSocketAddress remoteAddress = new InetSocketAddress(
+                    session.getRemoteAddress(),
+                    session.getRemotePort());
+
+            Tunnel remoteTunnel = new RawTunnel(remoteAddress, selector);
+            remoteTunnel.setBrotherTunnel(localTunnel);//关联兄弟
+            localTunnel.setBrotherTunnel(remoteTunnel);//关联兄弟
+            remoteTunnel.connect(remoteAddress);//开始连接
         } catch (IOException e) {
             Log.e(TAG, "remote socket create failed", e);
             IOUtils.closeQuietly(localTunnel);

@@ -33,10 +33,9 @@ import java.net.UnknownHostException;
 
 import me.xingrz.prox.ip.IPHeader;
 import me.xingrz.prox.ip.IPv4Header;
-import me.xingrz.prox.tcp.NatSession;
-import me.xingrz.prox.tcp.NatSessionManager;
 import me.xingrz.prox.tcp.TcpHeader;
 import me.xingrz.prox.tcp.TcpProxy;
+import me.xingrz.prox.tcp.TcpProxySession;
 import me.xingrz.prox.udp.UdpHeader;
 import me.xingrz.prox.udp.UdpProxy;
 import me.xingrz.prox.udp.UdpProxySession;
@@ -62,7 +61,7 @@ public class ProxVpnService extends VpnService implements Runnable {
     /**
      * 入站数据包发往此地址可被 VPN 截获
      */
-    public static final InetAddress FAKE_REMOTE_ADDRESS = getAddressQuietly("10.80.7.20");
+    public static final InetAddress FAKE_CLIENT_ADDRESS = getAddressQuietly("10.80.7.20");
 
 
     private static ProxVpnService instance;
@@ -95,8 +94,6 @@ public class ProxVpnService extends VpnService implements Runnable {
     private TcpProxy tcpProxy;
     private UdpProxy udpProxy;
 
-    private NatSessionManager sessionManager;
-
     @Override
     public void onCreate() {
         super.onCreate();
@@ -110,8 +107,6 @@ public class ProxVpnService extends VpnService implements Runnable {
 
         tcpHeader = new TcpHeader(packet);
         udpHeader = new UdpHeader(packet);
-
-        sessionManager = NatSessionManager.getInstance();
     }
 
     @Override
@@ -156,7 +151,6 @@ public class ProxVpnService extends VpnService implements Runnable {
             Log.d(TAG, "VPN interface established");
 
             tcpProxy = new TcpProxy();
-            tcpProxy.start();
             Log.d(TAG, "TCP proxy started");
 
             udpProxy = new UdpProxy();
@@ -215,7 +209,7 @@ public class ProxVpnService extends VpnService implements Runnable {
         //Log.v(TAG, iPv4Header.toString());
         switch (iPv4Header.protocol()) {
             case IPHeader.PROTOCOL_TCP:
-                //onTCPPacketReceived();
+                onTCPPacketReceived();
                 break;
             case IPHeader.PROTOCOL_UDP:
                 onUDPPacketReceived();
@@ -233,7 +227,8 @@ public class ProxVpnService extends VpnService implements Runnable {
 
         if (tcpHeader.getSourcePort() == tcpProxy.port()) {
             // 如果是来自本地 TCP 代理，表示是从隧道回来的包，回写给 VPN
-            NatSession session = sessionManager.getSession(tcpHeader.getDestinationPort());
+
+            TcpProxySession session = tcpProxy.getSession(tcpHeader.getDestinationPort());
             if (session == null) {
                 Log.w(TAG, "no session record for " + iPv4Header + " " + tcpHeader);
                 return;
@@ -245,15 +240,15 @@ public class ProxVpnService extends VpnService implements Runnable {
             // 反之亦然
 
             tcpHeader.setSourceIp(tcpHeader.getDestinationIp());
-            tcpHeader.setSourcePort(session.remotePort);
+            tcpHeader.setSourcePort(session.getRemotePort());
             tcpHeader.setDestinationIp(PROXY_ADDRESS);
             tcpHeader.recomputeChecksum();
             tcpHeader.writeTo(ingoing);
         } else {
             // 否则是即将发往公网的数据包，将它转发给我们的 TCP 代理
-            NatSession session = sessionManager.pickSession(
+            TcpProxySession session = tcpProxy.pickSession(
                     tcpHeader.getSourcePort(),
-                    tcpHeader.getDestinationIp(),
+                    tcpHeader.getDestinationIpAddress(),
                     tcpHeader.getDestinationPort());
 
             /*if (session.remoteHost == null) {
@@ -277,7 +272,7 @@ public class ProxVpnService extends VpnService implements Runnable {
                 session.proxy = proxy;
             }*/
 
-            tcpHeader.setSourceIp(tcpHeader.getDestinationIp()); // 有必要的
+            tcpHeader.setSourceIp(FAKE_CLIENT_ADDRESS);
             tcpHeader.setDestinationIp(PROXY_ADDRESS);
             tcpHeader.setDestinationPort(tcpProxy.port());
             tcpHeader.recomputeChecksum();
@@ -311,13 +306,13 @@ public class ProxVpnService extends VpnService implements Runnable {
             // 发出去前被 VPN 截获的
 
             // 创建会话，让 UDP 代理服务器先准备好好外网端的通道
-            UdpProxySession session = udpProxy.createSession(udpHeader.getSourcePort(),
+            UdpProxySession session = udpProxy.pickSession(udpHeader.getSourcePort(),
                     udpHeader.getDestinationIpAddress(), udpHeader.getDestinationPort());
 
             // 保护外网端通道不被 VPN 拦截
             protect(session.socket());
 
-            udpHeader.setSourceIp(udpHeader.getDestinationIp()); // 有必要
+            udpHeader.setSourceIp(FAKE_CLIENT_ADDRESS);
             udpHeader.setDestinationIp(PROXY_ADDRESS);
             udpHeader.setDestinationPort(udpProxy.port());
             udpHeader.recomputeChecksum();

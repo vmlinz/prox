@@ -22,7 +22,6 @@ import android.util.Log;
 
 import org.apache.commons.io.IOUtils;
 
-import java.io.Closeable;
 import java.io.IOException;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
@@ -34,16 +33,13 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.util.Iterator;
 
-public class UdpProxySession implements Runnable, Closeable {
+import me.xingrz.prox.AbstractTransportProxy;
+
+public class UdpProxySession extends AbstractTransportProxy.Session implements Runnable {
 
     private static final String TAG = "UdpProxySession";
 
     private final UdpProxy udpProxy;
-
-    private final int sourcePort;
-
-    private final InetAddress remoteAddress;
-    private final int remotePort;
 
     private final Selector selector;
     private final DatagramChannel serverChannel;
@@ -52,18 +48,11 @@ public class UdpProxySession implements Runnable, Closeable {
 
     private final Thread thread;
 
-    private boolean finished = false;
-
-    public final long createdAt = System.currentTimeMillis();
-
     public UdpProxySession(UdpProxy udpProxy, int sourcePort,
                            InetAddress remoteAddress, int remotePort) throws IOException {
+        super(sourcePort, remoteAddress, remotePort);
+
         this.udpProxy = udpProxy;
-
-        this.sourcePort = sourcePort;
-
-        this.remoteAddress = remoteAddress;
-        this.remotePort = remotePort;
 
         selector = Selector.open();
 
@@ -81,7 +70,7 @@ public class UdpProxySession implements Runnable, Closeable {
     }
 
     public void send(ByteBuffer buffer) throws IOException {
-        serverChannel.send(buffer, new InetSocketAddress(remoteAddress, remotePort));
+        serverChannel.send(buffer, new InetSocketAddress(getRemoteAddress(), getRemotePort()));
     }
 
     @Override
@@ -89,10 +78,6 @@ public class UdpProxySession implements Runnable, Closeable {
         thread.interrupt();
         IOUtils.closeQuietly(selector);
         IOUtils.closeQuietly(serverChannel);
-    }
-
-    public boolean isFinished() {
-        return finished;
     }
 
     @Override
@@ -111,9 +96,9 @@ public class UdpProxySession implements Runnable, Closeable {
                 }
             }
         } catch (ClosedSelectorException e) {
-            Log.v(TAG, "UDP session local:" + sourcePort + " closed");
+            Log.v(TAG, "UDP session local:" + getSourcePort() + " closed");
         } catch (IOException e) {
-            Log.w(TAG, "UDP session local:" + sourcePort + " error", e);
+            Log.w(TAG, "UDP session local:" + getSourcePort() + " error", e);
         }
     }
 
@@ -121,22 +106,10 @@ public class UdpProxySession implements Runnable, Closeable {
         buffer.clear();
         channel.receive(buffer);
 
-        finished = true;
+        finish();
 
         buffer.flip();
         udpProxy.feedback(buffer, this);
-    }
-
-    public int getSourcePort() {
-        return sourcePort;
-    }
-
-    public InetAddress getRemoteAddress() {
-        return remoteAddress;
-    }
-
-    public int getRemotePort() {
-        return remotePort;
     }
 
 }

@@ -18,16 +18,20 @@
 
 package me.xingrz.prox.tcp;
 
-public class NatSession {
+import java.io.IOException;
+import java.net.InetAddress;
 
-    public int remoteIp;
+import me.xingrz.prox.AbstractTransportProxy;
 
-    public int remotePort;
+public class TcpProxySession extends AbstractTransportProxy.Session {
 
-    public String remoteHost;
+    public TcpProxySession(int sourcePort, InetAddress remoteAddress, int remotePort) {
+        super(sourcePort, remoteAddress, remotePort);
+    }
 
-    public String proxy;
+    @Override
+    public void close() throws IOException {
 
-    public long lastTimeNs = System.nanoTime();
+    }
 
 }

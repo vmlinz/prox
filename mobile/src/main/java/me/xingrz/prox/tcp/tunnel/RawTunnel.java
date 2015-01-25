@@ -19,14 +19,19 @@
 package me.xingrz.prox.tcp.tunnel;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 
 public class RawTunnel extends Tunnel {
 
-    public RawTunnel(SocketChannel channel, Selector selector) {
-        super(channel, selector);
+    public RawTunnel(InetSocketAddress serverAddress, Selector selector) throws IOException {
+        super(serverAddress, selector);
+    }
+
+    public RawTunnel(SocketChannel innerChannel, Selector selector) {
+        super(innerChannel, selector);
     }
 
     @Override
