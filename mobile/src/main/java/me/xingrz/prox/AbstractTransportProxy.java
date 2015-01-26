@@ -28,19 +28,20 @@ import org.apache.commons.io.IOUtils;
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetAddress;
+import java.nio.channels.SelectableChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
-import java.nio.channels.spi.AbstractSelectableChannel;
 import java.util.Iterator;
 
 /**
  * 传输层代理服务器抽象
  *
- * @param <C> 通道，比如 {@link java.nio.channels.ServerSocketChannel} 或 {@link java.nio.channels.DatagramChannel}
+ * @param <C> 服务器通道，比如 {@link java.nio.channels.ServerSocketChannel} 或 {@link java.nio.channels.DatagramChannel}
+ * @param <L> 客户端会话通道，比如 {@link java.nio.channels.SocketChannel} 或 {@link java.nio.channels.DatagramChannel}
  * @param <S> 会话
  */
 public abstract class AbstractTransportProxy
-        <C extends AbstractSelectableChannel, S extends AbstractTransportProxy.Session>
+        <C extends SelectableChannel, L extends SelectableChannel, S extends AbstractTransportProxy.Session>
         implements Runnable, Closeable {
 
     /**
@@ -94,7 +95,7 @@ public abstract class AbstractTransportProxy
         /**
          * 标记会话为完成
          */
-        protected void finish() {
+        public void finish() {
             finished = true;
         }
 
@@ -124,7 +125,7 @@ public abstract class AbstractTransportProxy
             for (S session : sessions.snapshot().values()) {
                 if (now - session.lastActive >= sessionTimeout) {
                     sessions.remove(session.getSourcePort());
-                    Log.v(TAG, "Cleaned expired " + proxyName + " session:" + session.getSourcePort());
+                    Log.v(TAG, "Cleaned expired " + proxyName + " session: " + session.getSourcePort());
                 }
             }
 
@@ -148,9 +149,9 @@ public abstract class AbstractTransportProxy
             protected void entryRemoved(boolean evicted, Integer key, S oldValue, S newValue) {
                 IOUtils.closeQuietly(oldValue);
                 if (oldValue.isFinished()) {
-                    Log.v(TAG, "Removed finished " + proxyName + " session:" + key);
+                    Log.v(TAG, "Removed finished " + proxyName + " session: " + key);
                 } else {
-                    Log.v(TAG, "Terminated " + proxyName + " session:" + key);
+                    Log.v(TAG, "Terminated " + proxyName + " session: " + key);
                 }
             }
         };
@@ -206,6 +207,14 @@ public abstract class AbstractTransportProxy
         thread.interrupt();
         sessionCleaner.removeCallbacksAndMessages(null);
     }
+
+    /**
+     * 接受从 VPN 传来的通道
+     *
+     * @param localChannel 从 VPN 传来的本地通道
+     * @throws IOException
+     */
+    public abstract void accept(L localChannel) throws IOException;
 
     /**
      * 创建新的会话，子类必须重载此方法

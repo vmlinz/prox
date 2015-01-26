@@ -32,7 +32,7 @@ import java.util.concurrent.TimeUnit;
 import me.xingrz.prox.AbstractTransportProxy;
 import me.xingrz.prox.ProxVpnService;
 
-public class UdpProxy extends AbstractTransportProxy<DatagramChannel, UdpProxySession> {
+public class UdpProxy extends AbstractTransportProxy<DatagramChannel, DatagramChannel, UdpProxySession> {
 
     private static final String TAG = "UdpProxy";
 
@@ -62,14 +62,18 @@ public class UdpProxy extends AbstractTransportProxy<DatagramChannel, UdpProxySe
     @Override
     protected void onSelected(SelectionKey key) throws IOException {
         if (key.isReadable()) {
-            accept((DatagramChannel) key.channel());
+            if (key.attachment() != null && key.attachment() instanceof UdpProxySession) {
+                receive((DatagramChannel) key.channel(), (UdpProxySession) key.attachment());
+            } else {
+                accept((DatagramChannel) key.channel());
+            }
         }
     }
 
     @Override
     protected UdpProxySession createSession(int sourcePort, InetAddress remoteAddress, int remotePort)
             throws IOException {
-        return new UdpProxySession(this, sourcePort, remoteAddress, remotePort);
+        return new UdpProxySession(selector, sourcePort, remoteAddress, remotePort);
     }
 
     /**
@@ -100,7 +104,8 @@ public class UdpProxy extends AbstractTransportProxy<DatagramChannel, UdpProxySe
      * @param localChannel 代表网关的通道
      * @throws IOException
      */
-    private void accept(DatagramChannel localChannel) throws IOException {
+    @Override
+    public void accept(DatagramChannel localChannel) throws IOException {
         buffer.clear();
 
         InetSocketAddress source = (InetSocketAddress) localChannel.receive(buffer);
@@ -130,11 +135,19 @@ public class UdpProxy extends AbstractTransportProxy<DatagramChannel, UdpProxySe
     /**
      * 将公网的 UDP 返回反哺回给 VPN 网关
      *
-     * @param buffer  返回数据
-     * @param session 对应的会话
+     * @param remoteChannel 公网通道
+     * @param session       对应的会话
      * @throws IOException
      */
-    void feedback(ByteBuffer buffer, UdpProxySession session) throws IOException {
+    private void receive(DatagramChannel remoteChannel, UdpProxySession session) throws IOException {
+        buffer.clear();
+
+        remoteChannel.receive(buffer);
+
+        buffer.flip();
+
+        session.finish();
+
         InetSocketAddress address = new InetSocketAddress(
                 ProxVpnService.FAKE_CLIENT_ADDRESS, session.getSourcePort());
 

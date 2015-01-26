@@ -18,8 +18,6 @@
 
 package me.xingrz.prox.udp;
 
-import android.util.Log;
-
 import org.apache.commons.io.IOUtils;
 
 import java.io.IOException;
@@ -27,42 +25,28 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.nio.channels.ClosedSelectorException;
 import java.nio.channels.DatagramChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
-import java.util.Iterator;
 
 import me.xingrz.prox.AbstractTransportProxy;
 
-public class UdpProxySession extends AbstractTransportProxy.Session implements Runnable {
+public class UdpProxySession extends AbstractTransportProxy.Session {
 
     private static final String TAG = "UdpProxySession";
-
-    private final UdpProxy udpProxy;
 
     private final Selector selector;
     private final DatagramChannel serverChannel;
 
-    private final ByteBuffer buffer = ByteBuffer.allocate(0xFFFF);
-
-    private final Thread thread;
-
-    public UdpProxySession(UdpProxy udpProxy, int sourcePort,
+    public UdpProxySession(Selector selector, int sourcePort,
                            InetAddress remoteAddress, int remotePort) throws IOException {
         super(sourcePort, remoteAddress, remotePort);
 
-        this.udpProxy = udpProxy;
+        this.selector = selector;
 
-        selector = Selector.open();
-
-        serverChannel = DatagramChannel.open();
-        serverChannel.configureBlocking(false);
-        serverChannel.socket().bind(new InetSocketAddress(0));
-        serverChannel.register(selector, SelectionKey.OP_READ);
-
-        thread = new Thread(this, "UDPSession/" + sourcePort);
-        thread.start();
+        this.serverChannel = DatagramChannel.open();
+        this.serverChannel.configureBlocking(false);
+        this.serverChannel.socket().bind(new InetSocketAddress(0));
     }
 
     public DatagramSocket socket() {
@@ -70,46 +54,13 @@ public class UdpProxySession extends AbstractTransportProxy.Session implements R
     }
 
     public void send(ByteBuffer buffer) throws IOException {
+        serverChannel.register(this.selector, SelectionKey.OP_READ, this);
         serverChannel.send(buffer, new InetSocketAddress(getRemoteAddress(), getRemotePort()));
     }
 
     @Override
     public void close() {
-        thread.interrupt();
-        IOUtils.closeQuietly(selector);
         IOUtils.closeQuietly(serverChannel);
-    }
-
-    @Override
-    public synchronized void run() {
-        try {
-            while (true) {
-                selector.select();
-                Iterator<SelectionKey> iterator = selector.selectedKeys().iterator();
-                while (iterator.hasNext()) {
-                    SelectionKey key = iterator.next();
-                    iterator.remove();
-
-                    if (key.isReadable()) {
-                        onReadable((DatagramChannel) key.channel());
-                    }
-                }
-            }
-        } catch (ClosedSelectorException e) {
-            Log.v(TAG, "UDP session local:" + getSourcePort() + " closed");
-        } catch (IOException e) {
-            Log.w(TAG, "UDP session local:" + getSourcePort() + " error", e);
-        }
-    }
-
-    private void onReadable(DatagramChannel channel) throws IOException {
-        buffer.clear();
-        channel.receive(buffer);
-
-        finish();
-
-        buffer.flip();
-        udpProxy.feedback(buffer, this);
     }
 
 }

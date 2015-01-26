@@ -84,7 +84,7 @@ public class UdpHeader extends IPv4Header {
         pseudo += getDestinationIp() & 0xffff;
         pseudo += (getDestinationIp() >> 16) & 0xffff;
         pseudo += IPHeader.PROTOCOL_UDP;
-        pseudo += udpHeaderLength() + udpDataLength();
+        pseudo += ipDataLength();
 
         setUdpHeaderChecksum(checksum(pseudo, ipDataOffset(), ipDataLength()));
     }
