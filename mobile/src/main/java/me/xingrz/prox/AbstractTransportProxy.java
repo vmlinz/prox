@@ -27,20 +27,25 @@ import org.apache.commons.io.IOUtils;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.net.DatagramSocket;
 import java.net.InetAddress;
-import java.net.Socket;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.spi.AbstractSelectableChannel;
 import java.util.Iterator;
 
+/**
+ * 传输层代理服务器抽象
+ *
+ * @param <C> 通道，比如 {@link java.nio.channels.ServerSocketChannel} 或 {@link java.nio.channels.DatagramChannel}
+ * @param <S> 会话
+ */
 public abstract class AbstractTransportProxy
         <C extends AbstractSelectableChannel, S extends AbstractTransportProxy.Session>
         implements Runnable, Closeable {
 
-    private static final String TAG = "TransportLayerProxy";
-
+    /**
+     * 会话抽象
+     */
     public static abstract class Session implements Closeable {
 
         private final int sourcePort;
@@ -58,31 +63,52 @@ public abstract class AbstractTransportProxy
             this.remotePort = remotePort;
         }
 
+        /**
+         * @return 来源端口
+         */
         public int getSourcePort() {
             return sourcePort;
         }
 
+        /**
+         * @return 远端地址
+         */
         public InetAddress getRemoteAddress() {
             return remoteAddress;
         }
 
+        /**
+         * @return 远端端口
+         */
         public int getRemotePort() {
             return remotePort;
         }
 
+        /**
+         * @return 该会话是否已完成，或被强行终结
+         */
         public boolean isFinished() {
             return finished;
         }
 
+        /**
+         * 标记会话为完成
+         */
         protected void finish() {
             finished = true;
         }
 
+        /**
+         * 标记会话活动，不然过期未活动会被回收
+         */
         public void active() {
             lastActive = System.currentTimeMillis();
         }
 
     }
+
+
+    private static final String TAG = "TransportLayerProxy";
 
     private final long sessionTimeout;
 
@@ -187,18 +213,34 @@ public abstract class AbstractTransportProxy
      * @param sourcePort    来源端口，作为标识
      * @param remoteAddress 目标地址
      * @param remotePort    目标端口
-     * @return 新的 {@link me.xingrz.prox.AbstractTransportProxy.Session} 实例
+     * @return 新的会话实例
      * @throws IOException
      */
     protected abstract S createSession(int sourcePort, InetAddress remoteAddress, int remotePort)
             throws IOException;
 
+    /**
+     * 抽取一个会话
+     * 默认实现为创建新会话并将它放入会话队列中，子类可以根据需要重载它，比如复用已有会话
+     *
+     * @param sourcePort    来源端口，作为标识
+     * @param remoteAddress 目标地址
+     * @param remotePort    目标端口
+     * @return 新的会话实例
+     * @throws IOException
+     */
     public S pickSession(int sourcePort, InetAddress remoteAddress, int remotePort) throws IOException {
         S session = createSession(sourcePort, remoteAddress, remotePort);
         sessions.put(sourcePort, session);
         return session;
     }
 
+    /**
+     * 获取一个已有的会话
+     *
+     * @param sourcePort 来源端口，作为标识
+     * @return 会话实例，或 {@value null} 表示不存在
+     */
     public S getSession(int sourcePort) {
         return sessions.get(sourcePort);
     }
@@ -207,7 +249,7 @@ public abstract class AbstractTransportProxy
      * 完成并删除会话
      *
      * @param sourcePort 来源端口
-     * @return 会话
+     * @return 会话实例，或 {@value null} 表示不存在
      */
     public S finishSession(int sourcePort) {
         return sessions.remove(sourcePort);
