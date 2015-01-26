@@ -124,12 +124,12 @@ public class IPv4Header extends IPHeader {
     }
 
     protected short checksum(long sum, int offset, int length) {
-        for (int i = length - 1; i >= 0; i--) {
-            if ((length - 1 - i) % 2 == 0) {
-                sum += packet[offset + i] & 0x00FF;
-            } else {
-                sum += (packet[offset + i] << 8) & 0xFF00;
-            }
+        for (int i = 0; i < length; i += 2) {
+            sum += (packet[offset + i] << 8) & 0xFF00;
+        }
+
+        for (int i = 1; i < length; i += 2) {
+            sum += packet[offset + i] & 0x00FF;
         }
 
         while ((sum >> 16) > 0) {
