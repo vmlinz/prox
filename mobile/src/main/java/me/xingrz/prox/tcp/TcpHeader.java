@@ -117,7 +117,7 @@ public class TcpHeader extends IPv4Header {
         pseudo += IPHeader.PROTOCOL_TCP;
         pseudo += tcpHeaderLength() + tcpDataLength();
 
-        setTcpHeaderChecksum(checksum(pseudo, tcpDataOffset(), tcpDataLength()));
+        setTcpHeaderChecksum(checksum(pseudo, ipDataOffset(), ipDataLength()));
     }
 
     @Override
