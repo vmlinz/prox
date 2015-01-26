@@ -28,6 +28,7 @@ import org.apache.commons.io.IOUtils;
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetAddress;
+import java.nio.channels.ClosedChannelException;
 import java.nio.channels.SelectableChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
@@ -49,6 +50,8 @@ public abstract class AbstractTransportProxy
      */
     public static abstract class Session implements Closeable {
 
+        private final Selector selector;
+
         private final int sourcePort;
 
         private final InetAddress remoteAddress;
@@ -58,10 +61,16 @@ public abstract class AbstractTransportProxy
 
         long lastActive = System.currentTimeMillis();
 
-        public Session(int sourcePort, InetAddress remoteAddress, int remotePort) {
+        public Session(Selector selector, int sourcePort, InetAddress remoteAddress, int remotePort) {
+            this.selector = selector;
             this.sourcePort = sourcePort;
             this.remoteAddress = remoteAddress;
             this.remotePort = remotePort;
+        }
+
+        protected final SelectionKey register(SelectableChannel channel, int operations)
+                throws ClosedChannelException {
+            return channel.register(selector, operations, this);
         }
 
         /**

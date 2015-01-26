@@ -35,15 +35,11 @@ public class UdpProxySession extends AbstractTransportProxy.Session {
 
     private static final String TAG = "UdpProxySession";
 
-    private final Selector selector;
     private final DatagramChannel serverChannel;
 
     public UdpProxySession(Selector selector, int sourcePort,
                            InetAddress remoteAddress, int remotePort) throws IOException {
-        super(sourcePort, remoteAddress, remotePort);
-
-        this.selector = selector;
-
+        super(selector, sourcePort, remoteAddress, remotePort);
         this.serverChannel = DatagramChannel.open();
         this.serverChannel.configureBlocking(false);
         this.serverChannel.socket().bind(new InetSocketAddress(0));
@@ -54,7 +50,7 @@ public class UdpProxySession extends AbstractTransportProxy.Session {
     }
 
     public void send(ByteBuffer buffer) throws IOException {
-        serverChannel.register(this.selector, SelectionKey.OP_READ, this);
+        register(serverChannel, SelectionKey.OP_READ);
         serverChannel.send(buffer, new InetSocketAddress(getRemoteAddress(), getRemotePort()));
     }
 
