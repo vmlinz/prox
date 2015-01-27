@@ -31,9 +31,9 @@ import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.util.concurrent.TimeUnit;
 
-import me.xingrz.prox.transport.AbstractTransportProxy;
 import me.xingrz.prox.tcp.tunnel.RemoteTunnel;
 import me.xingrz.prox.tcp.tunnel.Tunnel;
+import me.xingrz.prox.transport.AbstractTransportProxy;
 
 public class TcpProxy extends AbstractTransportProxy<ServerSocketChannel, SocketChannel, TcpProxySession> {
 
@@ -61,15 +61,19 @@ public class TcpProxy extends AbstractTransportProxy<ServerSocketChannel, Socket
     }
 
     @Override
-    protected void onSelected(SelectionKey key) throws IOException {
-        if (key.isAcceptable()) {
-            accept(serverChannel.accept());
-        } else if (key.isConnectable()) {
-            ((RemoteTunnel) key.attachment()).onConnectible();
-        } else if (key.isReadable()) {
-            ((Tunnel) key.attachment()).onReadable(key);
-        } else if (key.isWritable()) {
-            ((Tunnel) key.attachment()).onWritable(key);
+    protected void onSelected(SelectionKey key) {
+        try {
+            if (key.isAcceptable()) {
+                accept(serverChannel.accept());
+            } else if (key.isConnectable()) {
+                ((RemoteTunnel) key.attachment()).onConnectible();
+            } else if (key.isReadable()) {
+                ((Tunnel) key.attachment()).onReadable(key);
+            } else if (key.isWritable()) {
+                ((Tunnel) key.attachment()).onWritable(key);
+            }
+        } catch (IOException e) {
+            Log.w(TAG, "TCP proxy faced an error", e);
         }
     }
 

@@ -155,7 +155,7 @@ public class ProxVpnService extends VpnService implements Runnable {
 
     @Override
     public synchronized void run() {
-        FileInputStream outgoing = null;
+        FileInputStream outgoing;
 
         try {
             pac = ProxAutoConfig.fromUrl(configUrl);
@@ -176,6 +176,12 @@ public class ProxVpnService extends VpnService implements Runnable {
             int size;
             while ((size = outgoing.read(packet)) != -1) {
                 if (size > 0) {
+                    if (!tcpProxy.isRunning() || !udpProxy.isRunning()) {
+                        outgoing.close();
+                        Log.e(TAG, "Proxy server exited");
+                        return;
+                    }
+
                     onIPPacketReceived(size);
                 }
             }

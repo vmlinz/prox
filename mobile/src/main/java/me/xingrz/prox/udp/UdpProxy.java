@@ -29,8 +29,8 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.util.concurrent.TimeUnit;
 
-import me.xingrz.prox.transport.AbstractTransportProxy;
 import me.xingrz.prox.ProxVpnService;
+import me.xingrz.prox.transport.AbstractTransportProxy;
 
 public class UdpProxy extends AbstractTransportProxy<DatagramChannel, DatagramChannel, UdpProxySession> {
 
@@ -60,13 +60,17 @@ public class UdpProxy extends AbstractTransportProxy<DatagramChannel, DatagramCh
     }
 
     @Override
-    protected void onSelected(SelectionKey key) throws IOException {
-        if (key.isReadable()) {
-            if (key.attachment() != null && key.attachment() instanceof UdpProxySession) {
-                receive((DatagramChannel) key.channel(), (UdpProxySession) key.attachment());
-            } else {
-                accept((DatagramChannel) key.channel());
+    protected void onSelected(SelectionKey key) {
+        try {
+            if (key.isReadable()) {
+                if (key.attachment() != null && key.attachment() instanceof UdpProxySession) {
+                    receive((DatagramChannel) key.channel(), (UdpProxySession) key.attachment());
+                } else {
+                    accept((DatagramChannel) key.channel());
+                }
             }
+        } catch (IOException e) {
+            Log.w(TAG, "UDP proxy faced an error", e);
         }
     }
 

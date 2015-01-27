@@ -158,12 +158,12 @@ public abstract class AbstractTransportProxy
 
     public abstract int port();
 
-    protected abstract void onSelected(SelectionKey key) throws IOException;
+    protected abstract void onSelected(SelectionKey key);
 
     @Override
     public synchronized void run() {
-        while (true) {
-            try {
+        try {
+            while (true) {
                 selector.select();
                 Iterator<SelectionKey> iterator = selector.selectedKeys().iterator();
                 while (iterator.hasNext()) {
@@ -174,25 +174,25 @@ public abstract class AbstractTransportProxy
                         onSelected(key);
                     }
                 }
-            } catch (IOException e) {
-                Log.w(TAG, "Running " + proxyName + " error", e);
-                try {
-                    Thread.sleep(100);
-                } catch (InterruptedException ignored) {
-                }
             }
+        } catch (IOException e) {
+            Log.w(TAG, "Running " + proxyName + " error", e);
         }
+
+        IOUtils.closeQuietly(selector);
+        IOUtils.closeQuietly(serverChannel);
+
+        Log.v(TAG, proxyName + " closed");
+    }
+
+    public boolean isRunning() {
+        return thread.isAlive();
     }
 
     @Override
     public void close() throws IOException {
         sessions.clear();
         thread.interrupt();
-
-        IOUtils.closeQuietly(selector);
-        IOUtils.closeQuietly(serverChannel);
-
-        Log.v(TAG, proxyName + " closed");
     }
 
     /**
