@@ -112,7 +112,10 @@ public class ProxAutoConfig {
      * 释放对象
      */
     public void destroy() {
-        Context.exit();
+        try {
+            Context.exit();
+        } catch (IllegalStateException ignored) {
+        }
     }
 
 }

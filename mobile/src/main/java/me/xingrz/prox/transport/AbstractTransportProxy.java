@@ -25,6 +25,8 @@ import org.apache.commons.io.IOUtils;
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetAddress;
+import java.nio.channels.ClosedByInterruptException;
+import java.nio.channels.ClosedSelectorException;
 import java.nio.channels.SelectableChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
@@ -175,12 +177,10 @@ public abstract class AbstractTransportProxy
                     }
                 }
             }
+        } catch (ClosedSelectorException ignored) {
         } catch (IOException e) {
             Log.w(TAG, "Running " + proxyName + " error", e);
         }
-
-        IOUtils.closeQuietly(selector);
-        IOUtils.closeQuietly(serverChannel);
 
         Log.v(TAG, proxyName + " closed");
     }
@@ -192,7 +192,8 @@ public abstract class AbstractTransportProxy
     @Override
     public void close() throws IOException {
         sessions.clear();
-        thread.interrupt();
+        IOUtils.closeQuietly(selector);
+        IOUtils.closeQuietly(serverChannel);
     }
 
     /**
