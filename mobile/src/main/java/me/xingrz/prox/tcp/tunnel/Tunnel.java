@@ -18,195 +18,183 @@
 
 package me.xingrz.prox.tcp.tunnel;
 
-import android.util.Log;
-
-import org.apache.commons.io.IOUtils;
-
 import java.io.Closeable;
 import java.io.IOException;
-import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 
-import me.xingrz.prox.ProxVpnService;
-
+/**
+ * Tunnel 基类
+ * 一个 Tunnel 包装了一条 {@link java.nio.channels.SocketChannel}
+ * 两个 Tunnel 可以互相 {@link #setBrother(Tunnel)} 对接，内部便会自动维护互相的读写
+ */
 public abstract class Tunnel implements Closeable {
 
-    private static final String TAG = "Tunnel";
+    protected final Selector selector;
+    protected final SocketChannel channel;
 
-    private static final ByteBuffer GL_BUFFER = ByteBuffer.allocate(20000);
+    private Tunnel brother;
 
-    protected abstract void onConnected(ByteBuffer buffer) throws IOException;
+    private ByteBuffer remaining;
+
+    private boolean closed;
+
+    private boolean finished;
+
+    public Tunnel(Selector selector, SocketChannel channel) {
+        this.selector = selector;
+        this.channel = channel;
+    }
 
     protected abstract boolean isTunnelEstablished();
 
+    /**
+     * Tunnel 从自己的 {@link #channel} 接收到了数据
+     *
+     * @param buffer 接收到的数据
+     * @throws IOException
+     */
     protected abstract void afterReceived(ByteBuffer buffer) throws IOException;
 
-    protected abstract void beforeSend(ByteBuffer buffer) throws IOException;
+    /**
+     * Tunnel 即将向自己的 {@link #channel} 发送数据
+     *
+     * @param buffer 即将发送的数据
+     * @throws IOException
+     */
+    protected abstract void beforeSending(ByteBuffer buffer) throws IOException;
 
-    protected abstract void onDispose();
+    /**
+     * Tunnel 已关闭
+     *
+     * @param finished 完成
+     */
+    protected abstract void onClose(boolean finished);
 
-    private SocketChannel innerChannel;
-    private ByteBuffer m_SendRemainBuffer;
-    private Selector selector;
-    private Tunnel brotherTunnel;
-
-    private volatile boolean disposed;
-
-    private InetSocketAddress serverAddress;
-    protected InetSocketAddress destinationAddress;
-
-    public Tunnel(SocketChannel innerChannel, Selector selector) {
-        this.innerChannel = innerChannel;
-        this.selector = selector;
+    /**
+     * @param brother 对接到这条 Tunnel
+     */
+    public final void setBrother(Tunnel brother) {
+        this.brother = brother;
     }
 
-    public Tunnel(InetSocketAddress serverAddress, Selector selector) throws IOException {
-        SocketChannel innerChannel = SocketChannel.open();
-        innerChannel.configureBlocking(false);
-        this.innerChannel = innerChannel;
-        this.selector = selector;
-        this.serverAddress = serverAddress;
+    protected final void tunnelEstablished() throws IOException {
+        beginReceiving();
+        brother.beginReceiving();
     }
 
-    public void setBrotherTunnel(Tunnel brotherTunnel) {
-        this.brotherTunnel = brotherTunnel;
-    }
-
-    public void connect(InetSocketAddress destinationAddress) throws IOException {
-        if (!ProxVpnService.getInstance().protect(innerChannel.socket())) {
-            Log.w(TAG, "failed protecting socket");
-            return;
+    public final void beginReceiving() throws IOException {
+        if (channel.isBlocking()) {
+            channel.configureBlocking(false);
         }
 
-        this.destinationAddress = destinationAddress;
-
-        innerChannel.register(selector, SelectionKey.OP_CONNECT, this);//注册连接事件
-        innerChannel.connect(serverAddress);//连接目标
+        channel.register(selector, SelectionKey.OP_READ, this);
     }
 
-    protected void beginReceive() throws IOException {
-        if (innerChannel.isBlocking()) {
-            innerChannel.configureBlocking(false);
-        }
+    /**
+     * 当 Selector 选择到 OP_READ 的时候会调用此方法
+     *
+     * @param key Selection Key
+     * @throws IOException
+     */
+    public final void onReadable(SelectionKey key) throws IOException {
+        ByteBuffer buffer = ByteBuffer.allocate(0xFFFF);
+        int read = channel.read(buffer);
+        if (read > 0) {
+            buffer.flip();
+            afterReceived(buffer);
 
-        innerChannel.register(selector, SelectionKey.OP_READ, this);//注册读事件
-    }
-
-    protected boolean write(ByteBuffer buffer, boolean copyRemainData) throws IOException {
-        int bytesSent;
-        while (buffer.hasRemaining()) {
-            bytesSent = innerChannel.write(buffer);
-            if (bytesSent == 0) {
-                break;//不能再发送了，终止循环
-            }
-        }
-
-        if (buffer.hasRemaining()) {//数据没有发送完毕
-            if (copyRemainData) {//拷贝剩余数据，然后侦听写入事件，待可写入时写入。
-                //拷贝剩余数据
-                if (m_SendRemainBuffer == null) {
-                    m_SendRemainBuffer = ByteBuffer.allocate(buffer.capacity());
+            if (isTunnelEstablished() && buffer.hasRemaining()) {
+                brother.beforeSending(buffer);
+                if (!brother.write(buffer, true)) {
+                    key.cancel();
                 }
-                m_SendRemainBuffer.clear();
-                m_SendRemainBuffer.put(buffer);
-                m_SendRemainBuffer.flip();
-                innerChannel.register(selector, SelectionKey.OP_WRITE, this);//注册写事件
             }
+        } else if (read == -1) {
+            finished = true;
+            close();
+        }
+    }
+
+    /**
+     * 当 Selector 选择到 OP_WRITE 的时候会调用此方法
+     *
+     * @param key Selection Key
+     * @throws IOException
+     */
+    public final void onWritable(SelectionKey key) throws IOException {
+        beforeSending(remaining);
+        if (write(remaining, false)) {
+            key.cancel();
+            if (isTunnelEstablished()) {
+                brother.beginReceiving();
+            } else {
+                beginReceiving();
+            }
+        }
+    }
+
+    /**
+     * 向该 Tunnel 的 {@link #channel} 发送数据
+     *
+     * @param buffer        即将发送的数据
+     * @param copyRemaining 如果没发送完整，是否等 {@link #channel} 再次就绪后继续写入
+     * @return 是否完整发送了所有数据
+     * @throws IOException
+     */
+    protected final boolean write(ByteBuffer buffer, boolean copyRemaining) throws IOException {
+        while (buffer.hasRemaining()) {
+            if (channel.write(buffer) == 0) {
+                break;
+            }
+        }
+
+        if (buffer.hasRemaining()) {
+            if (copyRemaining) {
+                if (remaining == null) {
+                    remaining = ByteBuffer.allocate(buffer.capacity());
+                }
+
+                remaining.clear();
+                remaining.put(buffer);
+                remaining.flip();
+
+                channel.register(selector, SelectionKey.OP_WRITE, this);
+            }
+
             return false;
-        } else {//发送完毕了
+        } else {
             return true;
         }
     }
 
-    protected void onTunnelEstablished() throws Exception {
-        beginReceive();//开始接收数据
-        brotherTunnel.beginReceive();//兄弟也开始收数据吧
-    }
-
-    public final void onConnectible() {
-        try {
-            if (innerChannel.finishConnect()) {
-                onConnected(GL_BUFFER);
-            } else {
-                Log.w(TAG, "Failed connecting to " + serverAddress);
-                close();
-            }
-        } catch (IOException e) {
-            Log.w(TAG, "Failed connecting to " + serverAddress, e);
-            close();
-        }
-    }
-
-    public final void onReadable(SelectionKey key) {
-        try {
-            ByteBuffer buffer = GL_BUFFER;
-            buffer.clear();
-
-            int bytesRead = innerChannel.read(buffer);
-            if (bytesRead > 0) {
-                buffer.flip();
-                afterReceived(buffer);//先让子类处理，例如解密数据。
-                if (isTunnelEstablished() && buffer.hasRemaining()) {//将读到的数据，转发给兄弟。
-                    brotherTunnel.beforeSend(buffer);//发送之前，先让子类处理，例如做加密等。
-                    if (!brotherTunnel.write(buffer, true)) {
-                        key.cancel();//兄弟吃不消，就取消读取事件。
-                    }
-                }
-            } else if (bytesRead < 0) {
-                close();//连接已关闭，释放资源。
-            }
-        } catch (IOException e) {
-            Log.w(TAG, "Error reading tunnel", e);
-            close();
-        }
-    }
-
-    public final void onWritable(SelectionKey key) {
-        try {
-            beforeSend(m_SendRemainBuffer);//发送之前，先让子类处理，例如做加密等。
-
-            if (write(m_SendRemainBuffer, false)) {//如果剩余数据已经发送完毕
-                key.cancel();//取消写事件。
-                if (isTunnelEstablished()) {
-                    brotherTunnel.beginReceive();//这边数据发送完毕，通知兄弟可以收数据了。
-                } else {
-                    beginReceive();//开始接收代理服务器响应数据
-                }
-            }
-        } catch (IOException e) {
-            Log.w(TAG, "Error writing tunnel", e);
-            close();
-        }
-    }
-
+    /**
+     * 关闭 Tunnel 并释放资源
+     *
+     * @throws IOException
+     */
     @Override
-    public void close() {
+    public void close() throws IOException {
         closeInternal(true);
     }
 
-    private void closeInternal(boolean disposeBrother) {
-        if (disposed) {
-            return;
+    private void closeInternal(boolean withBrother) throws IOException {
+        if (!closed) {
+            channel.close();
+
+            if (withBrother && brother != null) {
+                brother.finished = brother.finished || finished;
+                brother.closeInternal(false);
+            }
+
+            remaining = null;
+            brother = null;
+
+            closed = true;
+            onClose(finished);
         }
-
-        IOUtils.closeQuietly(innerChannel);
-
-        if (brotherTunnel != null && disposeBrother) {
-            brotherTunnel.closeInternal(false);//把兄弟的资源也释放了。
-        }
-
-        selector = null;
-
-        innerChannel = null;
-        brotherTunnel = null;
-
-        m_SendRemainBuffer = null;
-
-        disposed = true;
-        onDispose();
     }
 
 }

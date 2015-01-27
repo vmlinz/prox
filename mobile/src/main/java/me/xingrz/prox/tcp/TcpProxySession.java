@@ -18,20 +18,50 @@
 
 package me.xingrz.prox.tcp;
 
+import org.apache.commons.io.IOUtils;
+
 import java.io.IOException;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.nio.channels.Selector;
+import java.nio.channels.SocketChannel;
 
-import me.xingrz.prox.AbstractTransportProxy;
+import me.xingrz.prox.ProxVpnService;
+import me.xingrz.prox.tcp.tunnel.IncomingTunnel;
+import me.xingrz.prox.tcp.tunnel.OutgoingTunnel;
+import me.xingrz.prox.transport.AbstractTransportProxy;
 
 public class TcpProxySession extends AbstractTransportProxy.Session {
 
-    public TcpProxySession(int sourcePort, InetAddress remoteAddress, int remotePort) {
-        super(sourcePort, remoteAddress, remotePort);
+    private static final String TAG = "TcpProxySession";
+
+    private IncomingTunnel localTunnel;
+    private OutgoingTunnel remoteTunnel;
+
+    public TcpProxySession(Selector selector, int sourcePort,
+                           InetAddress remoteAddress, int remotePort) throws IOException {
+        super(selector, sourcePort, remoteAddress, remotePort);
     }
 
     @Override
     public void close() throws IOException {
+        IOUtils.closeQuietly(localTunnel);
+        IOUtils.closeQuietly(remoteTunnel);
+    }
 
+    public boolean isEstablished() {
+        return remoteTunnel != null && remoteTunnel.isTunnelEstablished();
+    }
+
+    public void accept(SocketChannel localChannel) throws IOException {
+        localTunnel = new IncomingTunnel(selector, localChannel);
+        remoteTunnel = new OutgoingTunnel(selector, new InetSocketAddress(getRemoteAddress(), getRemotePort()));
+
+        ProxVpnService.getInstance().protect(remoteTunnel.socket());
+
+        localTunnel.setBrother(remoteTunnel);
+        remoteTunnel.setBrother(localTunnel);
+        remoteTunnel.connect();
     }
 
 }

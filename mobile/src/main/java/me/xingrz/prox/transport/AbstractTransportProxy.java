@@ -16,19 +16,15 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-package me.xingrz.prox;
+package me.xingrz.prox.transport;
 
-import android.os.Handler;
-import android.os.Looper;
 import android.util.Log;
-import android.util.LruCache;
 
 import org.apache.commons.io.IOUtils;
 
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetAddress;
-import java.nio.channels.ClosedChannelException;
 import java.nio.channels.SelectableChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
@@ -50,7 +46,7 @@ public abstract class AbstractTransportProxy
      */
     public static abstract class Session implements Closeable {
 
-        private final Selector selector;
+        protected final Selector selector;
 
         private final int sourcePort;
 
@@ -66,11 +62,6 @@ public abstract class AbstractTransportProxy
             this.sourcePort = sourcePort;
             this.remoteAddress = remoteAddress;
             this.remotePort = remotePort;
-        }
-
-        protected final SelectionKey register(SelectableChannel channel, int operations)
-                throws ClosedChannelException {
-            return channel.register(selector, operations, this);
         }
 
         /**
@@ -117,30 +108,11 @@ public abstract class AbstractTransportProxy
 
     }
 
-
-    private static final String TAG = "TransportLayerProxy";
+    private static final String TAG = "AbstractTransportProxy";
 
     private final long sessionTimeout;
 
-    private final LruCache<Integer, S> sessions;
-
-    private final Handler sessionCleaner = new Handler(Looper.getMainLooper());
-
-    private final Runnable sessionCleanerRunnable = new Runnable() {
-        @Override
-        public void run() {
-            long now = System.currentTimeMillis();
-
-            for (S session : sessions.snapshot().values()) {
-                if (now - session.lastActive >= sessionTimeout) {
-                    sessions.remove(session.getSourcePort());
-                    Log.v(TAG, "Cleaned expired " + proxyName + " session: " + session.getSourcePort());
-                }
-            }
-
-            sessionCleaner.postDelayed(sessionCleanerRunnable, sessionTimeout);
-        }
-    };
+    private final NatSessionManager<S> sessions;
 
     private final String proxyName;
 
@@ -153,15 +125,20 @@ public abstract class AbstractTransportProxy
             throws IOException {
 
         this.sessionTimeout = sessionTimeout;
-        this.sessions = new LruCache<Integer, S>(maxSessionCount) {
+        this.sessions = new NatSessionManager<S>(maxSessionCount) {
             @Override
-            protected void entryRemoved(boolean evicted, Integer key, S oldValue, S newValue) {
-                IOUtils.closeQuietly(oldValue);
-                if (oldValue.isFinished()) {
-                    Log.v(TAG, "Removed finished " + proxyName + " session: " + key);
+            protected void onRemoved(S session) {
+                IOUtils.closeQuietly(session);
+                if (session.isFinished()) {
+                    Log.v(TAG, "Removed finished " + proxyName + " session: " + session.getSourcePort());
                 } else {
-                    Log.v(TAG, "Terminated " + proxyName + " session: " + key);
+                    Log.v(TAG, "Terminated " + proxyName + " session: " + session.getSourcePort() + ", session count: " + sessions.size());
                 }
+            }
+
+            @Override
+            protected boolean shouldRecycle(S session) {
+                return shouldRecycleSession(session);
             }
         };
 
@@ -175,8 +152,6 @@ public abstract class AbstractTransportProxy
         this.thread.start();
 
         Log.d(TAG, "Proxy " + proxyName + " running on " + port());
-
-        sessionCleaner.postDelayed(sessionCleanerRunnable, sessionTimeout);
     }
 
     protected abstract C createChannel(Selector selector) throws IOException;
@@ -187,8 +162,8 @@ public abstract class AbstractTransportProxy
 
     @Override
     public synchronized void run() {
-        try {
-            while (true) {
+        while (true) {
+            try {
                 selector.select();
                 Iterator<SelectionKey> iterator = selector.selectedKeys().iterator();
                 while (iterator.hasNext()) {
@@ -199,22 +174,25 @@ public abstract class AbstractTransportProxy
                         onSelected(key);
                     }
                 }
+            } catch (IOException e) {
+                Log.w(TAG, "Running " + proxyName + " error", e);
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException ignored) {
+                }
             }
-        } catch (IOException e) {
-            Log.w(TAG, "Running UDP proxy error", e);
         }
-
-        IOUtils.closeQuietly(selector);
-        IOUtils.closeQuietly(serverChannel);
-
-        Log.v(TAG, "UDP server closed");
     }
 
     @Override
     public void close() throws IOException {
-        sessions.evictAll();
+        sessions.clear();
         thread.interrupt();
-        sessionCleaner.removeCallbacksAndMessages(null);
+
+        IOUtils.closeQuietly(selector);
+        IOUtils.closeQuietly(serverChannel);
+
+        Log.v(TAG, proxyName + " closed");
     }
 
     /**
@@ -270,7 +248,13 @@ public abstract class AbstractTransportProxy
      * @return 会话实例，或 {@value null} 表示不存在
      */
     public S finishSession(int sourcePort) {
-        return sessions.remove(sourcePort);
+        S session = sessions.get(sourcePort);
+        sessions.remove(sourcePort);
+        return session;
+    }
+
+    protected boolean shouldRecycleSession(S session) {
+        return System.currentTimeMillis() - session.lastActive >= sessionTimeout;
     }
 
 }

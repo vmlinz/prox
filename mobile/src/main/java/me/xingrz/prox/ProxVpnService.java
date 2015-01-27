@@ -31,8 +31,8 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 
-import me.xingrz.prox.ip.IPHeader;
-import me.xingrz.prox.ip.IPv4Header;
+import me.xingrz.prox.internet.IPHeader;
+import me.xingrz.prox.internet.IPv4Header;
 import me.xingrz.prox.tcp.TcpHeader;
 import me.xingrz.prox.tcp.TcpProxy;
 import me.xingrz.prox.tcp.TcpProxySession;
@@ -132,6 +132,20 @@ public class ProxVpnService extends VpnService implements Runnable {
             thread = null;
         }
 
+        IOUtils.closeQuietly(ingoing);
+        ingoing = null;
+
+
+        IOUtils.closeQuietly(intf);
+        intf = null;
+
+        IOUtils.closeQuietly(tcpProxy);
+        IOUtils.closeQuietly(udpProxy);
+
+        if (pac != null) {
+            pac.destroy();
+        }
+
         instance = null;
 
         Log.d(TAG, "VPN service destroyed");
@@ -166,24 +180,9 @@ public class ProxVpnService extends VpnService implements Runnable {
                 }
             }
 
-            outgoing.close();
+            IOUtils.closeQuietly(outgoing);
         } catch (IOException e) {
             Log.w(TAG, "VPN ended with exception", e);
-        } finally {
-            IOUtils.closeQuietly(ingoing);
-            ingoing = null;
-
-            IOUtils.closeQuietly(outgoing);
-
-            IOUtils.closeQuietly(intf);
-            intf = null;
-
-            IOUtils.closeQuietly(tcpProxy);
-            IOUtils.closeQuietly(udpProxy);
-
-            if (pac != null) {
-                pac.destroy();
-            }
         }
     }
 
@@ -206,7 +205,6 @@ public class ProxVpnService extends VpnService implements Runnable {
             return;
         }
 
-        //Log.v(TAG, iPv4Header.toString());
         switch (iPv4Header.protocol()) {
             case IPHeader.PROTOCOL_TCP:
                 onTCPPacketReceived();
@@ -218,10 +216,8 @@ public class ProxVpnService extends VpnService implements Runnable {
     }
 
     private void onTCPPacketReceived() throws IOException {
-        //Log.v(TAG, tcpHeader.toString());
-
-        // 只处理经由本 VPN 发出去的包
         if (!tcpHeader.getSourceIpAddress().equals(PROXY_ADDRESS)) {
+            // 只处理经由本 VPN 发出去的包
             return;
         }
 
@@ -234,22 +230,29 @@ public class ProxVpnService extends VpnService implements Runnable {
                 return;
             }
 
+            session.active();
+
+            if (tcpHeader.fin()) {
+                session.finish();
+                tcpProxy.finishSession(tcpHeader.getDestinationPort());
+            }
+
             // 因为 TCP 是传输层协议，而我们的 VPN 是工作在网络层的
             // 所以我们要直接在网络层将 TCP 包转发到 TCPProxy
             // 再用工作在传输层的 TCPProxy 接收，随后再转发到外网
             // 反之亦然
 
-            tcpHeader.setSourceIp(tcpHeader.getDestinationIp());
+            tcpHeader.setSourceIp(session.getRemoteAddress());
             tcpHeader.setSourcePort(session.getRemotePort());
             tcpHeader.setDestinationIp(PROXY_ADDRESS);
             tcpHeader.recomputeChecksum();
             tcpHeader.writeTo(ingoing);
         } else {
             // 否则是即将发往公网的数据包，将它转发给我们的 TCP 代理
-            TcpProxySession session = tcpProxy.pickSession(
-                    tcpHeader.getSourcePort(),
-                    tcpHeader.getDestinationIpAddress(),
-                    tcpHeader.getDestinationPort());
+            TcpProxySession session = tcpProxy.pickSession(tcpHeader.getSourcePort(),
+                    tcpHeader.getDestinationIpAddress(), tcpHeader.getDestinationPort());
+
+            session.active();
 
             /*if (session.remoteHost == null) {
                 String host = HttpHeaderParser.parseHost(packet,
@@ -281,10 +284,10 @@ public class ProxVpnService extends VpnService implements Runnable {
     }
 
     private void onUDPPacketReceived() throws IOException {
-        Log.v(TAG, iPv4Header.toString());
-        Log.v(TAG, udpHeader.toString());
+        Log.v(TAG, iPv4Header.toString() + " " + udpHeader.toString());
 
         if (!udpHeader.getSourceIpAddress().equals(PROXY_ADDRESS)) {
+            // 只处理经由本 VPN 发出去的包
             return;
         }
 

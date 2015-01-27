@@ -29,7 +29,7 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.util.concurrent.TimeUnit;
 
-import me.xingrz.prox.AbstractTransportProxy;
+import me.xingrz.prox.transport.AbstractTransportProxy;
 import me.xingrz.prox.ProxVpnService;
 
 public class UdpProxy extends AbstractTransportProxy<DatagramChannel, DatagramChannel, UdpProxySession> {

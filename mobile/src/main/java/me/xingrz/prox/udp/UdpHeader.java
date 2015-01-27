@@ -18,9 +18,9 @@
 
 package me.xingrz.prox.udp;
 
-import me.xingrz.prox.ip.IPHeader;
-import me.xingrz.prox.ip.IPv4Header;
-import me.xingrz.prox.ip.NumericUtils;
+import me.xingrz.prox.internet.IPHeader;
+import me.xingrz.prox.internet.IPv4Header;
+import me.xingrz.prox.internet.NumericUtils;
 
 public class UdpHeader extends IPv4Header {
 

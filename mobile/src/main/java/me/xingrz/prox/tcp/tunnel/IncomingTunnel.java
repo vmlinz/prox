@@ -18,8 +18,6 @@
 
 package me.xingrz.prox.tcp.tunnel;
 
-import android.util.Log;
-
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.Selector;
@@ -27,32 +25,28 @@ import java.nio.channels.SocketChannel;
 
 public class IncomingTunnel extends Tunnel {
 
-    public IncomingTunnel(SocketChannel innerChannel, Selector selector) {
-        super(innerChannel, selector);
-    }
-
-    @Override
-    protected void onConnected(ByteBuffer buffer) throws IOException {
-
+    public IncomingTunnel(Selector selector, SocketChannel channel) {
+        super(selector, channel);
     }
 
     @Override
     protected boolean isTunnelEstablished() {
-        return false;
+        return true;
     }
 
     @Override
     protected void afterReceived(ByteBuffer buffer) throws IOException {
-        Log.v("Incoming", new String(buffer.array()));
-    }
-
-    @Override
-    protected void beforeSend(ByteBuffer buffer) throws IOException {
 
     }
 
     @Override
-    protected void onDispose() {
+    protected void beforeSending(ByteBuffer buffer) throws IOException {
 
     }
+
+    @Override
+    protected void onClose(boolean finished) {
+
+    }
+
 }

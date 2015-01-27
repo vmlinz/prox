@@ -18,9 +18,9 @@
 
 package me.xingrz.prox.tcp;
 
-import me.xingrz.prox.ip.IPHeader;
-import me.xingrz.prox.ip.IPv4Header;
-import me.xingrz.prox.ip.NumericUtils;
+import me.xingrz.prox.internet.IPHeader;
+import me.xingrz.prox.internet.IPv4Header;
+import me.xingrz.prox.internet.NumericUtils;
 
 /**
  * https://en.wikipedia.org/wiki/Transmission_Control_Protocol#TCP_segment_structure
@@ -115,19 +115,19 @@ public class TcpHeader extends IPv4Header {
         pseudo += getDestinationIp() & 0xffff;
         pseudo += (getDestinationIp() >> 16) & 0xffff;
         pseudo += IPHeader.PROTOCOL_TCP;
-        pseudo += tcpHeaderLength() + tcpDataLength();
+        pseudo += ipDataLength();
 
         setTcpHeaderChecksum(checksum(pseudo, ipDataOffset(), ipDataLength()));
     }
 
     @Override
     public String toString() {
-        String flag = "---";
-        if (ack()) flag = "ACK";
-        else if (psh()) flag = "PSH";
-        else if (rst()) flag = "RST";
-        else if (syn()) flag = "SYN";
-        else if (fin()) flag = "FIN";
+        String flag = "";
+        if (ack()) flag += "ACK";
+        if (psh()) flag += "PSH";
+        if (rst()) flag += "RST";
+        if (syn()) flag += "SYN";
+        if (fin()) flag += "FIN";
 
         return String.format("TCP[srcPort:%s, dstPort:%s, offset:%s, flag:%s]",
                 getSourcePort(), getDestinationPort(), tcpDataOffset(), flag);

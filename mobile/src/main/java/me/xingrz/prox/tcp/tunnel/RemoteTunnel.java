@@ -20,43 +20,44 @@ package me.xingrz.prox.tcp.tunnel;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
+import java.net.Socket;
+import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 
-public class RawTunnel extends Tunnel {
+public abstract class RemoteTunnel extends Tunnel {
 
-    public RawTunnel(InetSocketAddress serverAddress, Selector selector) throws IOException {
-        super(serverAddress, selector);
+    private static SocketChannel makeChannel() throws IOException {
+        SocketChannel channel = SocketChannel.open();
+        channel.configureBlocking(false);
+        return channel;
     }
 
-    public RawTunnel(SocketChannel innerChannel, Selector selector) {
-        super(innerChannel, selector);
+    private final InetSocketAddress address;
+
+    public RemoteTunnel(Selector selector, InetSocketAddress address) throws IOException {
+        super(selector, makeChannel());
+        this.address = address;
     }
 
-    @Override
-    protected void onConnected(ByteBuffer buffer) throws IOException {
+    protected abstract void onConnected() throws IOException;
 
+    public final void onConnectible() throws IOException {
+        if (channel.finishConnect()) {
+            onConnected();
+        }
     }
 
-    @Override
-    protected boolean isTunnelEstablished() {
-        return false;
+    public Socket socket() {
+        return channel.socket();
     }
 
-    @Override
-    protected void beforeSend(ByteBuffer buffer) throws IOException {
-
-    }
-
-    @Override
-    protected void afterReceived(ByteBuffer buffer) throws IOException {
-
-    }
-
-    @Override
-    protected void onDispose() {
-
+    public void connect() throws IOException {
+        if (channel.connect(address)) {
+            onConnected();
+        } else {
+            channel.register(selector, SelectionKey.OP_CONNECT, this);
+        }
     }
 
 }

@@ -29,7 +29,7 @@ import java.nio.channels.DatagramChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 
-import me.xingrz.prox.AbstractTransportProxy;
+import me.xingrz.prox.transport.AbstractTransportProxy;
 
 public class UdpProxySession extends AbstractTransportProxy.Session {
 
@@ -50,7 +50,7 @@ public class UdpProxySession extends AbstractTransportProxy.Session {
     }
 
     public void send(ByteBuffer buffer) throws IOException {
-        register(serverChannel, SelectionKey.OP_READ);
+        serverChannel.register(selector, SelectionKey.OP_READ, this);
         serverChannel.send(buffer, new InetSocketAddress(getRemoteAddress(), getRemotePort()));
     }
 

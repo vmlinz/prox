@@ -16,7 +16,7 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-package me.xingrz.prox.ip;
+package me.xingrz.prox.internet;
 
 public class IPHeader {
 

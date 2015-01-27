@@ -16,24 +16,42 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-package me.xingrz.prox.ip;
+package me.xingrz.prox.tcp.tunnel;
 
-public class IpUtils {
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.Selector;
 
-    public static String toString(int ip) {
-        return String.format("%s.%s.%s.%s",
-                (ip >> 24) & 0xff,
-                (ip >> 16) & 0xff,
-                (ip >> 8) & 0xff,
-                ip & 0xff);
+public class OutgoingTunnel extends RemoteTunnel {
+
+    public OutgoingTunnel(Selector selector, InetSocketAddress address) throws IOException {
+        super(selector, address);
     }
 
-    public static int toInteger(String ip) {
-        String[] split = ip.split(".");
-        return (Integer.parseInt(split[0]) << 24)
-                | (Integer.parseInt(split[1]) << 16)
-                | (Integer.parseInt(split[2]) << 8)
-                | (Integer.parseInt(split[3]));
+    @Override
+    protected void onConnected() throws IOException {
+        tunnelEstablished();
+    }
+
+    @Override
+    public boolean isTunnelEstablished() {
+        return true;
+    }
+
+    @Override
+    protected void afterReceived(ByteBuffer buffer) throws IOException {
+
+    }
+
+    @Override
+    protected void beforeSending(ByteBuffer buffer) throws IOException {
+
+    }
+
+    @Override
+    protected void onClose(boolean finished) {
+
     }
 
 }

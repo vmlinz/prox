@@ -31,12 +31,11 @@ import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.util.concurrent.TimeUnit;
 
-import me.xingrz.prox.AbstractTransportProxy;
-import me.xingrz.prox.tcp.tunnel.IncomingTunnel;
-import me.xingrz.prox.tcp.tunnel.RawTunnel;
+import me.xingrz.prox.transport.AbstractTransportProxy;
+import me.xingrz.prox.tcp.tunnel.RemoteTunnel;
 import me.xingrz.prox.tcp.tunnel.Tunnel;
 
-public class TcpProxy extends AbstractTransportProxy<ServerSocketChannel, TcpProxySession> {
+public class TcpProxy extends AbstractTransportProxy<ServerSocketChannel, SocketChannel, TcpProxySession> {
 
     private static final String TAG = "TCPProxy";
 
@@ -63,21 +62,21 @@ public class TcpProxy extends AbstractTransportProxy<ServerSocketChannel, TcpPro
 
     @Override
     protected void onSelected(SelectionKey key) throws IOException {
-        if (key.isReadable()) {
+        if (key.isAcceptable()) {
+            accept(serverChannel.accept());
+        } else if (key.isConnectable()) {
+            ((RemoteTunnel) key.attachment()).onConnectible();
+        } else if (key.isReadable()) {
             ((Tunnel) key.attachment()).onReadable(key);
         } else if (key.isWritable()) {
             ((Tunnel) key.attachment()).onWritable(key);
-        } else if (key.isConnectable()) {
-            ((Tunnel) key.attachment()).onConnectible();
-        } else if (key.isAcceptable()) {
-            onAccepted();
         }
     }
 
     @Override
-    protected TcpProxySession createSession(int sourcePort, InetAddress remoteAddress, int remotePort)
+    protected TcpProxySession createSession(final int sourcePort, InetAddress remoteAddress, int remotePort)
             throws IOException {
-        return new TcpProxySession(sourcePort, remoteAddress, remotePort);
+        return new TcpProxySession(selector, sourcePort, remoteAddress, remotePort);
     }
 
     @Override
@@ -88,46 +87,38 @@ public class TcpProxy extends AbstractTransportProxy<ServerSocketChannel, TcpPro
         if (session == null
                 || !session.getRemoteAddress().equals(remoteAddress)
                 || session.getRemotePort() != remotePort) {
-            session = createSession(sourcePort, remoteAddress, remotePort);
+            session = super.pickSession(sourcePort, remoteAddress, remotePort);
             Log.v(TAG, "new session from " + sourcePort + " to "
                     + remoteAddress.getHostAddress() + ":" + remotePort);
         }
 
-        session.active();
         return session;
     }
 
-    private void onAccepted() {
-        Tunnel localTunnel = null;
+    /**
+     * 接收到来自 VPN 的 TCP 通道，开始取出会话信息并建立远程通道
+     *
+     * @param localChannel 从 VPN 传来的本地通道
+     * @throws IOException
+     */
+    @Override
+    public void accept(SocketChannel localChannel) throws IOException {
+        int sourcePort = localChannel.socket().getPort();
+        Log.d(TAG, "Accepted TCP channel from " + sourcePort);
 
-        try {
-            SocketChannel localChannel = serverChannel.accept();
-            localTunnel = new IncomingTunnel(localChannel, selector);
-
-            Log.d(TAG, "accepted from " + localChannel.socket().getPort());
-
-            TcpProxySession session = getSession(localChannel.socket().getPort());
-            if (session == null) {
-                Log.w(TAG, "no session for this socket, ignored");
-                IOUtils.closeQuietly(localTunnel);
-                return;
-            }
-
-            Log.d(TAG, "session " + session.getRemoteAddress().getHostAddress()
-                    + ":" + session.getRemotePort());
-
-            InetSocketAddress remoteAddress = new InetSocketAddress(
-                    session.getRemoteAddress(),
-                    session.getRemotePort());
-
-            Tunnel remoteTunnel = new RawTunnel(remoteAddress, selector);
-            remoteTunnel.setBrotherTunnel(localTunnel);//关联兄弟
-            localTunnel.setBrotherTunnel(remoteTunnel);//关联兄弟
-            remoteTunnel.connect(remoteAddress);//开始连接
-        } catch (IOException e) {
-            Log.e(TAG, "remote socket create failed", e);
-            IOUtils.closeQuietly(localTunnel);
+        TcpProxySession session = getSession(sourcePort);
+        if (session == null) {
+            Log.w(TAG, "no session for this socket, ignored");
+            IOUtils.closeQuietly(localChannel);
+            return;
         }
+
+        session.accept(localChannel);
+    }
+
+    @Override
+    protected boolean shouldRecycleSession(TcpProxySession session) {
+        return super.shouldRecycleSession(session) && !session.isEstablished();
     }
 
 }
