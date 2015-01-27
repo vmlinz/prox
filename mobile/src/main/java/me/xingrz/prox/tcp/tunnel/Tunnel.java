@@ -18,6 +18,8 @@
 
 package me.xingrz.prox.tcp.tunnel;
 
+import android.util.Log;
+
 import java.io.Closeable;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -31,6 +33,8 @@ import java.nio.channels.SocketChannel;
  * 两个 Tunnel 可以互相 {@link #setBrother(Tunnel)} 对接，内部便会自动维护互相的读写
  */
 public abstract class Tunnel implements Closeable {
+
+    private static final String TAG = "Tunnel";
 
     protected final Selector selector;
     protected final SocketChannel channel;
@@ -145,10 +149,15 @@ public abstract class Tunnel implements Closeable {
      * @throws IOException
      */
     protected final boolean write(ByteBuffer buffer, boolean copyRemaining) throws IOException {
-        while (buffer.hasRemaining()) {
-            if (channel.write(buffer) == 0) {
-                break;
+        try {
+            while (buffer.hasRemaining()) {
+                if (channel.write(buffer) == 0) {
+                    break;
+                }
             }
+        } catch (IOException e) {
+            Log.w(TAG, "Failed writing to " + channelToString(), e);
+            return false;
         }
 
         if (buffer.hasRemaining()) {
@@ -195,6 +204,14 @@ public abstract class Tunnel implements Closeable {
             closed = true;
             onClose(finished);
         }
+    }
+
+    protected final String channelToString() {
+        return String.format("Channel[%s:%s -> %s:%s]",
+                channel.socket().getLocalAddress().getHostAddress(),
+                channel.socket().getLocalPort(),
+                channel.socket().getInetAddress().getHostAddress(),
+                channel.socket().getPort());
     }
 
 }
