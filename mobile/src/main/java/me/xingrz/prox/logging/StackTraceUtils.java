@@ -18,14 +18,9 @@
 
 package me.xingrz.prox.logging;
 
-import android.util.Log;
-
-import java.util.Arrays;
-
 public class StackTraceUtils {
 
     public static String getCallerClassName(Throwable throwable) {
-        Log.v("StackTrace", Arrays.toString(throwable.getStackTrace()));
         return getSimpleClassName(throwable.getStackTrace()[1].getClassName());
     }
 
