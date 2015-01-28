@@ -290,8 +290,6 @@ public class ProxVpnService extends VpnService implements Runnable {
     }
 
     private void onUDPPacketReceived() throws IOException {
-        Log.v(TAG, iPv4Header.toString() + " " + udpHeader.toString());
-
         if (!udpHeader.getSourceIpAddress().equals(PROXY_ADDRESS)) {
             // 只处理经由本 VPN 发出去的包
             return;
