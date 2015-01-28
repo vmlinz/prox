@@ -18,6 +18,8 @@
 
 package me.xingrz.prox.tcp;
 
+import android.util.Log;
+
 import org.apache.commons.io.IOUtils;
 
 import java.io.IOException;
@@ -62,6 +64,11 @@ public class TcpProxySession extends AbstractTransportProxy.Session {
         localTunnel.setBrother(remoteTunnel);
         remoteTunnel.setBrother(localTunnel);
         remoteTunnel.connect();
+
+        Log.v(TAG, "Tunneling TCP session local:" + getSourcePort()
+                + " <=> proxy:" + localChannel.socket().getLocalPort()
+                + " <=> proxy:" + remoteTunnel.socket().getLocalPort()
+                + " <=> " + getRemoteAddress().getHostAddress() + ":" + getRemotePort());
     }
 
 }

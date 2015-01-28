@@ -25,7 +25,6 @@ import org.apache.commons.io.IOUtils;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.nio.channels.ClosedByInterruptException;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
@@ -93,8 +92,11 @@ public class TcpProxy extends AbstractTransportProxy<ServerSocketChannel, Socket
                 || !session.getRemoteAddress().equals(remoteAddress)
                 || session.getRemotePort() != remotePort) {
             session = super.pickSession(sourcePort, remoteAddress, remotePort);
-            Log.v(TAG, "new session from " + sourcePort + " to "
-                    + remoteAddress.getHostAddress() + ":" + remotePort);
+
+            Log.v(TAG, "Created TCP session local:" + sourcePort
+                    + " -> proxy:" + port()
+                    + " -> proxy:(pending) "
+                    + " -> " + remoteAddress.getHostAddress() + ":" + remotePort);
         }
 
         return session;
@@ -109,7 +111,7 @@ public class TcpProxy extends AbstractTransportProxy<ServerSocketChannel, Socket
     @Override
     public void accept(SocketChannel localChannel) throws IOException {
         int sourcePort = localChannel.socket().getPort();
-        Log.d(TAG, "Accepted TCP channel from " + sourcePort);
+        Log.v(TAG, "Accepted TCP channel from " + sourcePort);
 
         TcpProxySession session = getSession(sourcePort);
         if (session == null) {

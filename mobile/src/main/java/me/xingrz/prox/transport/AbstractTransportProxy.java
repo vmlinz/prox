@@ -163,7 +163,7 @@ public abstract class AbstractTransportProxy
     protected abstract void onSelected(SelectionKey key);
 
     @Override
-    public synchronized void run() {
+    public void run() {
         try {
             while (true) {
                 selector.select();

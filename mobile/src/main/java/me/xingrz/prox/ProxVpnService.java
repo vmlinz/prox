@@ -154,7 +154,7 @@ public class ProxVpnService extends VpnService implements Runnable {
     }
 
     @Override
-    public synchronized void run() {
+    public void run() {
         FileInputStream outgoing;
 
         try {
