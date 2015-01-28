@@ -40,4 +40,6 @@ public interface FormattingLogger {
 
     public void e(Throwable tr, String msg, Object... args);
 
+    public String getTag();
+
 }

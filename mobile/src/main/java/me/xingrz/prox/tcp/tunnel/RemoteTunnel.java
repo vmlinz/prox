@@ -30,14 +30,12 @@ public abstract class RemoteTunnel extends Tunnel {
     private static SocketChannel makeChannel() throws IOException {
         SocketChannel channel = SocketChannel.open();
         channel.configureBlocking(false);
+        channel.socket().bind(new InetSocketAddress(0));
         return channel;
     }
 
-    private final InetSocketAddress address;
-
-    public RemoteTunnel(Selector selector, InetSocketAddress address) throws IOException {
-        super(selector, makeChannel());
-        this.address = address;
+    public RemoteTunnel(Selector selector, String sessionKey) throws IOException {
+        super(selector, makeChannel(), sessionKey);
     }
 
     protected abstract void onConnected() throws IOException;
@@ -48,15 +46,12 @@ public abstract class RemoteTunnel extends Tunnel {
         }
     }
 
-    public Socket socket() {
-        return channel.socket();
-    }
-
-    public void connect() throws IOException {
+    public void connect(InetSocketAddress address) throws IOException {
         if (channel.connect(address)) {
             onConnected();
         } else {
             channel.register(selector, SelectionKey.OP_CONNECT, this);
+            logger.v("Waiting for OP_CONNECT");
         }
     }
 

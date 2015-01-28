@@ -19,18 +19,26 @@
 package me.xingrz.prox.tcp.tunnel;
 
 import java.io.IOException;
-import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.Selector;
 
+import me.xingrz.prox.logging.FormattingLogger;
+import me.xingrz.prox.logging.FormattingLoggers;
+
 public class OutgoingTunnel extends RemoteTunnel {
 
-    public OutgoingTunnel(Selector selector, InetSocketAddress address) throws IOException {
-        super(selector, address);
+    public OutgoingTunnel(Selector selector, String sessionKey) throws IOException {
+        super(selector, sessionKey);
+    }
+
+    @Override
+    protected FormattingLogger getLogger(String sessionKey) {
+        return FormattingLoggers.getContextLogger(sessionKey);
     }
 
     @Override
     protected void onConnected() throws IOException {
+        logger.v("Connected to remote host");
         tunnelEstablished();
     }
 

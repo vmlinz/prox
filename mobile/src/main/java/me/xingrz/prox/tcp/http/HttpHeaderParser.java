@@ -20,6 +20,7 @@ package me.xingrz.prox.tcp.http;
 
 import android.util.Log;
 
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -40,8 +41,8 @@ public class HttpHeaderParser {
         SUPPORT_HTTP_METHOD.add("CONNECT");
     }
 
-    public static String parseHost(byte[] data, int offset, int length) {
-        switch (data[offset]) {
+    public static boolean maybeHttpRequest(ByteBuffer buffer) {
+        switch (buffer.array()[0]) {
             case 'G': // GET
             case 'P': // POST, PUT
             case 'D': // DELETE
@@ -49,14 +50,14 @@ public class HttpHeaderParser {
             case 'O': // OPTIONS
             case 'T': // TRACE
             case 'C': // CONNECT
-                return parseHttpHost(data, offset, length);
+                return true;
             default:
-                return null;
+                return false;
         }
     }
 
-    private static String parseHttpHost(byte[] data, int offset, int length) {
-        String[] headers = new String(data, offset, length).split("\r\n");
+    public static String parseHttpHost(ByteBuffer buffer) {
+        String[] headers = new String(buffer.array(), buffer.position(), buffer.position() + buffer.limit()).split("\r\n");
         if (headers.length < 2) {
             // CONNECT www.google.com:443 HTTP/1.1\r\n
             // \r\n
@@ -71,8 +72,6 @@ public class HttpHeaderParser {
         if (!SUPPORT_HTTP_METHOD.contains(request[0]) || !request[2].startsWith("HTTP/1.")) {
             return null;
         }
-
-        Log.v(TAG, headers[0]);
 
         if ("CONNECT".equals(request[0])) {
             return request[1].split(":")[0];

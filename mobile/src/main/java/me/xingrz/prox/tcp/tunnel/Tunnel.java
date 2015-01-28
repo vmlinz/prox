@@ -18,14 +18,15 @@
 
 package me.xingrz.prox.tcp.tunnel;
 
-import android.util.Log;
-
 import java.io.Closeable;
 import java.io.IOException;
+import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
+
+import me.xingrz.prox.logging.FormattingLogger;
 
 /**
  * Tunnel 基类
@@ -34,7 +35,7 @@ import java.nio.channels.SocketChannel;
  */
 public abstract class Tunnel implements Closeable {
 
-    private static final String TAG = "Tunnel";
+    protected final FormattingLogger logger;
 
     protected final Selector selector;
     protected final SocketChannel channel;
@@ -47,9 +48,16 @@ public abstract class Tunnel implements Closeable {
 
     private boolean finished;
 
-    public Tunnel(Selector selector, SocketChannel channel) {
+    public Tunnel(Selector selector, SocketChannel channel, String sessionKey) {
         this.selector = selector;
         this.channel = channel;
+        this.logger = getLogger(sessionKey);
+    }
+
+    protected abstract FormattingLogger getLogger(String sessionKey);
+
+    public Socket socket() {
+        return channel.socket();
     }
 
     protected abstract boolean isTunnelEstablished();
@@ -95,6 +103,7 @@ public abstract class Tunnel implements Closeable {
         }
 
         channel.register(selector, SelectionKey.OP_READ, this);
+        logger.v("Began receiving and waiting for OP_READ");
     }
 
     /**
@@ -109,16 +118,23 @@ public abstract class Tunnel implements Closeable {
         if (read > 0) {
             buffer.flip();
             afterReceived(buffer);
+            logger.v("Received %d bytes", read);
 
             if (isTunnelEstablished() && buffer.hasRemaining()) {
                 brother.beforeSending(buffer);
-                if (!brother.write(buffer, true)) {
+                logger.v("Sending to brother...");
+
+                if (brother.write(buffer, true)) {
+                    logger.v("Sent to brother");
+                } else {
+                    logger.v("Brother not ready for receiving, canceled");
                     key.cancel();
                 }
             }
         } else if (read == -1) {
             finished = true;
             close();
+            logger.v("Nothing to read, finished");
         }
     }
 
@@ -129,6 +145,7 @@ public abstract class Tunnel implements Closeable {
      * @throws IOException
      */
     public final void onWritable(SelectionKey key) throws IOException {
+        logger.v("Been writable, resuming writing");
         beforeSending(remaining);
         if (write(remaining, false)) {
             key.cancel();
@@ -143,25 +160,27 @@ public abstract class Tunnel implements Closeable {
     /**
      * 向该 Tunnel 的 {@link #channel} 发送数据
      *
-     * @param buffer        即将发送的数据
-     * @param copyRemaining 如果没发送完整，是否等 {@link #channel} 再次就绪后继续写入
+     * @param buffer              即将发送的数据
+     * @param shouldKeepRemaining 如果没发送完整，是否等 {@link #channel} 再次就绪后继续写入
      * @return 是否完整发送了所有数据
      * @throws IOException
      */
-    protected final boolean write(ByteBuffer buffer, boolean copyRemaining) throws IOException {
+    protected boolean write(ByteBuffer buffer, boolean shouldKeepRemaining) throws IOException {
         try {
+            logger.v("Writing to channel");
             while (buffer.hasRemaining()) {
                 if (channel.write(buffer) == 0) {
+                    logger.v("Writing ended");
                     break;
                 }
             }
         } catch (IOException e) {
-            Log.w(TAG, "Failed writing to " + channelToString(), e);
+            logger.w(e, "Failed writing to " + channelToString());
             return false;
         }
 
         if (buffer.hasRemaining()) {
-            if (copyRemaining) {
+            if (shouldKeepRemaining) {
                 if (remaining == null) {
                     remaining = ByteBuffer.allocate(buffer.capacity());
                 }
@@ -171,10 +190,15 @@ public abstract class Tunnel implements Closeable {
                 remaining.flip();
 
                 channel.register(selector, SelectionKey.OP_WRITE, this);
+
+                logger.v("Kept remaining buffer and waiting for a OP_WRITE");
+            } else {
+                logger.v("Writes dropped");
             }
 
             return false;
         } else {
+            logger.v("Writing completed");
             return true;
         }
     }
@@ -207,7 +231,7 @@ public abstract class Tunnel implements Closeable {
     }
 
     protected final String channelToString() {
-        return String.format("Channel[%s:%s -> %s:%s]",
+        return String.format("Channel[%s:%d -> %s:%d]",
                 channel.socket().getLocalAddress().getHostAddress(),
                 channel.socket().getLocalPort(),
                 channel.socket().getInetAddress().getHostAddress(),

@@ -29,11 +29,11 @@ import java.nio.channels.DatagramChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 
+import me.xingrz.prox.logging.FormattingLogger;
+import me.xingrz.prox.logging.FormattingLoggers;
 import me.xingrz.prox.transport.AbstractTransportProxy;
 
 public class UdpProxySession extends AbstractTransportProxy.Session {
-
-    private static final String TAG = "UdpProxySession";
 
     private final DatagramChannel serverChannel;
 
@@ -43,6 +43,11 @@ public class UdpProxySession extends AbstractTransportProxy.Session {
         this.serverChannel = DatagramChannel.open();
         this.serverChannel.configureBlocking(false);
         this.serverChannel.socket().bind(new InetSocketAddress(0));
+    }
+
+    @Override
+    public FormattingLogger getLogger() {
+        return FormattingLoggers.getContextLogger(String.format("%08x", hashCode()));
     }
 
     public DatagramSocket socket() {

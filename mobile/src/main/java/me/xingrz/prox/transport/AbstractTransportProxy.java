@@ -18,19 +18,18 @@
 
 package me.xingrz.prox.transport;
 
-import android.util.Log;
-
 import org.apache.commons.io.IOUtils;
 
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetAddress;
-import java.nio.channels.ClosedByInterruptException;
 import java.nio.channels.ClosedSelectorException;
 import java.nio.channels.SelectableChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.util.Iterator;
+
+import me.xingrz.prox.logging.FormattingLogger;
 
 /**
  * 传输层代理服务器抽象
@@ -48,6 +47,8 @@ public abstract class AbstractTransportProxy
      */
     public static abstract class Session implements Closeable {
 
+        protected final FormattingLogger logger;
+
         protected final Selector selector;
 
         private final int sourcePort;
@@ -64,7 +65,10 @@ public abstract class AbstractTransportProxy
             this.sourcePort = sourcePort;
             this.remoteAddress = remoteAddress;
             this.remotePort = remotePort;
+            this.logger = getLogger();
         }
+
+        protected abstract FormattingLogger getLogger();
 
         /**
          * @return 来源端口
@@ -110,20 +114,18 @@ public abstract class AbstractTransportProxy
 
     }
 
-    private static final String TAG = "AbstractTransportProxy";
+    protected final FormattingLogger logger = getLogger();
 
     private final long sessionTimeout;
 
     private final NatSessionManager<S> sessions;
-
-    private final String proxyName;
 
     protected final Selector selector;
     protected final C serverChannel;
 
     private final Thread thread;
 
-    public AbstractTransportProxy(int maxSessionCount, long sessionTimeout, final String proxyName)
+    public AbstractTransportProxy(int maxSessionCount, long sessionTimeout)
             throws IOException {
 
         this.sessionTimeout = sessionTimeout;
@@ -132,9 +134,9 @@ public abstract class AbstractTransportProxy
             protected void onRemoved(S session) {
                 IOUtils.closeQuietly(session);
                 if (session.isFinished()) {
-                    Log.v(TAG, "Removed finished " + proxyName + " session: " + session.getSourcePort());
+                    logger.v("Removed finished session %08x", session.hashCode());
                 } else {
-                    Log.v(TAG, "Terminated " + proxyName + " session: " + session.getSourcePort() + ", session count: " + sessions.size());
+                    logger.v("Terminated session %08x, session count: %s", session.hashCode(), size());
                 }
             }
 
@@ -144,17 +146,17 @@ public abstract class AbstractTransportProxy
             }
         };
 
-        this.proxyName = proxyName;
-
         this.selector = Selector.open();
 
         this.serverChannel = createChannel(selector);
 
-        this.thread = new Thread(this, proxyName);
+        this.thread = new Thread(this, logger.getTag());
         this.thread.start();
 
-        Log.d(TAG, "Proxy " + proxyName + " running on " + port());
+        logger.d("Proxy running on %d", port());
     }
+
+    protected abstract FormattingLogger getLogger();
 
     protected abstract C createChannel(Selector selector) throws IOException;
 
@@ -178,11 +180,12 @@ public abstract class AbstractTransportProxy
                 }
             }
         } catch (ClosedSelectorException ignored) {
+            logger.d("Proxy selector closed");
         } catch (IOException e) {
-            Log.w(TAG, "Running " + proxyName + " error", e);
+            logger.w(e, "Proxy running error");
         }
 
-        Log.v(TAG, proxyName + " closed");
+        logger.d("Proxy closed");
     }
 
     public boolean isRunning() {

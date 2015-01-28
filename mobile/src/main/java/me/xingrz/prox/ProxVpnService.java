@@ -21,7 +21,6 @@ package me.xingrz.prox;
 import android.content.Intent;
 import android.net.VpnService;
 import android.os.ParcelFileDescriptor;
-import android.util.Log;
 
 import org.apache.commons.io.IOUtils;
 
@@ -33,6 +32,8 @@ import java.net.UnknownHostException;
 
 import me.xingrz.prox.internet.IPHeader;
 import me.xingrz.prox.internet.IPv4Header;
+import me.xingrz.prox.logging.FormattingLogger;
+import me.xingrz.prox.logging.FormattingLoggers;
 import me.xingrz.prox.tcp.TcpHeader;
 import me.xingrz.prox.tcp.TcpProxy;
 import me.xingrz.prox.tcp.TcpProxySession;
@@ -42,7 +43,7 @@ import me.xingrz.prox.udp.UdpProxySession;
 
 public class ProxVpnService extends VpnService implements Runnable {
 
-    private static final String TAG = "ProxVpnService";
+    private static final FormattingLogger logger = FormattingLoggers.getContextLogger();
 
 
     private static InetAddress getAddressQuietly(String address) {
@@ -120,7 +121,7 @@ public class ProxVpnService extends VpnService implements Runnable {
         thread = new Thread(this, "VPNServer");
         thread.start();
 
-        Log.d(TAG, "VPN service started with PAC: " + configUrl);
+        logger.d("VPN service started with PAC: %s", configUrl);
 
         return START_NOT_STICKY;
     }
@@ -148,7 +149,7 @@ public class ProxVpnService extends VpnService implements Runnable {
 
         instance = null;
 
-        Log.d(TAG, "VPN service destroyed");
+        logger.d("VPN service destroyed");
 
         super.onDestroy();
     }
@@ -159,36 +160,40 @@ public class ProxVpnService extends VpnService implements Runnable {
 
         try {
             pac = ProxAutoConfig.fromUrl(configUrl);
-            Log.d(TAG, "PAC loaded");
+            logger.d("PAC loaded");
 
             intf = establish();
-            Log.d(TAG, "VPN interface established");
+            logger.d("VPN interface established");
 
             tcpProxy = new TcpProxy();
-            Log.d(TAG, "TCP proxy started");
+            logger.d("TCP proxy started");
 
             udpProxy = new UdpProxy();
-            Log.d(TAG, "UDP proxy started");
+            logger.d("UDP proxy started");
 
             ingoing = new FileOutputStream(intf.getFileDescriptor());
             outgoing = new FileInputStream(intf.getFileDescriptor());
 
             int size;
             while ((size = outgoing.read(packet)) != -1) {
-                if (size > 0) {
-                    if (!tcpProxy.isRunning() || !udpProxy.isRunning()) {
-                        outgoing.close();
-                        Log.e(TAG, "Proxy server exited");
-                        return;
-                    }
+                if (!tcpProxy.isRunning()) {
+                    logger.e("TCP proxy unexpectedly stopped");
+                    break;
+                }
 
+                if (!udpProxy.isRunning()) {
+                    logger.e("UDP proxy unexpectedly stopped");
+                    break;
+                }
+
+                if (size > 0) {
                     onIPPacketReceived(size);
                 }
             }
 
             IOUtils.closeQuietly(outgoing);
         } catch (IOException e) {
-            Log.w(TAG, "VPN ended with exception", e);
+            logger.w(e, "VPN ended with exception");
         }
     }
 
@@ -207,7 +212,11 @@ public class ProxVpnService extends VpnService implements Runnable {
 
     private void onIPv4PacketReceived(int size) throws IOException {
         if (iPv4Header.totalLength() != size) {
-            Log.w(TAG, "ignored TCP packet with wrong length");
+            logger.w("Ignored IP packet with wrong length");
+            return;
+        }
+
+        if (!iPv4Header.getSourceIpAddress().equals(PROXY_ADDRESS)) {
             return;
         }
 
@@ -222,17 +231,12 @@ public class ProxVpnService extends VpnService implements Runnable {
     }
 
     private void onTCPPacketReceived() throws IOException {
-        if (!tcpHeader.getSourceIpAddress().equals(PROXY_ADDRESS)) {
-            // 只处理经由本 VPN 发出去的包
-            return;
-        }
-
         if (tcpHeader.getSourcePort() == tcpProxy.port()) {
             // 如果是来自本地 TCP 代理，表示是从隧道回来的包，回写给 VPN
 
             TcpProxySession session = tcpProxy.getSession(tcpHeader.getDestinationPort());
             if (session == null) {
-                Log.w(TAG, "no session record for " + iPv4Header + " " + tcpHeader);
+                logger.w("Dropped invalid TCP session %d", tcpHeader.getDestinationPort());
                 return;
             }
 
@@ -260,27 +264,6 @@ public class ProxVpnService extends VpnService implements Runnable {
 
             session.active();
 
-            /*if (session.remoteHost == null) {
-                String host = HttpHeaderParser.parseHost(packet,
-                        tcpHeader.tcpDataOffset(), tcpHeader.tcpDataLength());
-                if (host == null) {
-                    host = tcpHeader.getDestinationIpAddress().getHostAddress();
-                }
-
-                session.remoteHost = host;
-            }
-
-            Log.v(TAG, "Host: " + session.remoteHost);
-
-            if (session.proxy == null) {
-                String proxy = pac.findProxyForUrl(null, session.remoteHost);
-                if (proxy == null) {
-                    proxy = "DIRECT";
-                }
-
-                session.proxy = proxy;
-            }*/
-
             tcpHeader.setSourceIp(FAKE_CLIENT_ADDRESS);
             tcpHeader.setDestinationIp(PROXY_ADDRESS);
             tcpHeader.setDestinationPort(tcpProxy.port());
@@ -290,17 +273,12 @@ public class ProxVpnService extends VpnService implements Runnable {
     }
 
     private void onUDPPacketReceived() throws IOException {
-        if (!udpHeader.getSourceIpAddress().equals(PROXY_ADDRESS)) {
-            // 只处理经由本 VPN 发出去的包
-            return;
-        }
-
         if (udpHeader.getSourcePort() == udpProxy.port()) {
             // UDP 代理丢回给 VPN 的
 
             UdpProxySession session = udpProxy.finishSession(udpHeader.getDestinationPort());
             if (session == null) {
-                Log.w(TAG, "UDP session invalid");
+                logger.w("Dropped invalid UDP session %d", udpHeader.getDestinationPort());
                 return;
             }
 

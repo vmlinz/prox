@@ -18,8 +18,6 @@
 
 package me.xingrz.prox.tcp;
 
-import android.util.Log;
-
 import org.apache.commons.io.IOUtils;
 
 import java.io.IOException;
@@ -31,19 +29,19 @@ import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.util.concurrent.TimeUnit;
 
+import me.xingrz.prox.logging.FormattingLogger;
+import me.xingrz.prox.logging.FormattingLoggers;
 import me.xingrz.prox.tcp.tunnel.RemoteTunnel;
 import me.xingrz.prox.tcp.tunnel.Tunnel;
 import me.xingrz.prox.transport.AbstractTransportProxy;
 
 public class TcpProxy extends AbstractTransportProxy<ServerSocketChannel, SocketChannel, TcpProxySession> {
 
-    private static final String TAG = "TCPProxy";
-
     private static final int TCP_SESSION_MAX_COUNT = 60;
     private static final long TCP_SESSION_TIMEOUT_MS = TimeUnit.SECONDS.toMillis(60);
 
     public TcpProxy() throws IOException {
-        super(TCP_SESSION_MAX_COUNT, TCP_SESSION_TIMEOUT_MS, TAG);
+        super(TCP_SESSION_MAX_COUNT, TCP_SESSION_TIMEOUT_MS);
     }
 
     @Override
@@ -53,6 +51,11 @@ public class TcpProxy extends AbstractTransportProxy<ServerSocketChannel, Socket
         channel.socket().bind(new InetSocketAddress(0));
         channel.register(selector, SelectionKey.OP_ACCEPT);
         return channel;
+    }
+
+    @Override
+    protected FormattingLogger getLogger() {
+        return FormattingLoggers.getContextLogger();
     }
 
     @Override
@@ -73,7 +76,7 @@ public class TcpProxy extends AbstractTransportProxy<ServerSocketChannel, Socket
                 ((Tunnel) key.attachment()).onWritable(key);
             }
         } catch (IOException e) {
-            Log.w(TAG, "TCP proxy faced an error", e);
+            logger.w(e, "Proxy faced an error");
         }
     }
 
@@ -92,11 +95,9 @@ public class TcpProxy extends AbstractTransportProxy<ServerSocketChannel, Socket
                 || !session.getRemoteAddress().equals(remoteAddress)
                 || session.getRemotePort() != remotePort) {
             session = super.pickSession(sourcePort, remoteAddress, remotePort);
-
-            Log.v(TAG, "Created TCP session local:" + sourcePort
-                    + " -> proxy:" + port()
-                    + " -> proxy:(pending) "
-                    + " -> " + remoteAddress.getHostAddress() + ":" + remotePort);
+            logger.v("Created session %08x local:%d -> in:%d -> out:(pending) -> %s:%d",
+                    session.hashCode(),
+                    sourcePort, port(), remoteAddress.getHostAddress(), remotePort);
         }
 
         return session;
@@ -111,14 +112,15 @@ public class TcpProxy extends AbstractTransportProxy<ServerSocketChannel, Socket
     @Override
     public void accept(SocketChannel localChannel) throws IOException {
         int sourcePort = localChannel.socket().getPort();
-        Log.v(TAG, "Accepted TCP channel from " + sourcePort);
 
         TcpProxySession session = getSession(sourcePort);
         if (session == null) {
-            Log.w(TAG, "no session for this socket, ignored");
+            logger.w("Ignored socket from %d without session", sourcePort);
             IOUtils.closeQuietly(localChannel);
             return;
         }
+
+        logger.v("Accepted channel from %d, session %08x", sourcePort, session.hashCode());
 
         session.accept(localChannel);
     }

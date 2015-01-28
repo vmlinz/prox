@@ -18,8 +18,6 @@
 
 package me.xingrz.prox.udp;
 
-import android.util.Log;
-
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -30,11 +28,11 @@ import java.nio.channels.Selector;
 import java.util.concurrent.TimeUnit;
 
 import me.xingrz.prox.ProxVpnService;
+import me.xingrz.prox.logging.FormattingLogger;
+import me.xingrz.prox.logging.FormattingLoggers;
 import me.xingrz.prox.transport.AbstractTransportProxy;
 
 public class UdpProxy extends AbstractTransportProxy<DatagramChannel, DatagramChannel, UdpProxySession> {
-
-    private static final String TAG = "UdpProxy";
 
     private static final int UDP_SESSION_MAX_COUNT = 20;
     private static final long UDP_SESSION_TIMEOUT_MS = TimeUnit.SECONDS.toMillis(30);
@@ -42,7 +40,7 @@ public class UdpProxy extends AbstractTransportProxy<DatagramChannel, DatagramCh
     private final ByteBuffer buffer = ByteBuffer.allocate(0xFFFF);
 
     public UdpProxy() throws IOException {
-        super(UDP_SESSION_MAX_COUNT, UDP_SESSION_TIMEOUT_MS, TAG);
+        super(UDP_SESSION_MAX_COUNT, UDP_SESSION_TIMEOUT_MS);
     }
 
     @Override
@@ -52,6 +50,11 @@ public class UdpProxy extends AbstractTransportProxy<DatagramChannel, DatagramCh
         channel.socket().bind(new InetSocketAddress(0));
         channel.register(selector, SelectionKey.OP_READ);
         return channel;
+    }
+
+    @Override
+    protected FormattingLogger getLogger() {
+        return FormattingLoggers.getContextLogger();
     }
 
     @Override
@@ -70,7 +73,7 @@ public class UdpProxy extends AbstractTransportProxy<DatagramChannel, DatagramCh
                 }
             }
         } catch (IOException e) {
-            Log.w(TAG, "UDP proxy faced an error", e);
+            logger.w(e, "Proxy faced an error");
         }
     }
 
@@ -93,10 +96,12 @@ public class UdpProxy extends AbstractTransportProxy<DatagramChannel, DatagramCh
     public UdpProxySession pickSession(int sourcePort, InetAddress remoteAddress, int remotePort) throws IOException {
         UdpProxySession session = super.pickSession(sourcePort, remoteAddress, remotePort);
 
-        Log.v(TAG, "Created UDP session local:" + sourcePort +
-                " -> proxy:" + port() +
-                " -> proxy:" + session.socket().getLocalPort() +
-                " -> " + session.getRemoteAddress().getHostAddress() + ":" + session.getRemotePort());
+        logger.v("Created session %08x local:%d -> in:%d -> out:%d -> %s:%d",
+                session.hashCode(),
+                sourcePort,
+                port(),
+                session.socket().getLocalPort(),
+                session.getRemoteAddress().getHostAddress(), session.getRemotePort());
 
         return session;
     }
@@ -114,26 +119,28 @@ public class UdpProxy extends AbstractTransportProxy<DatagramChannel, DatagramCh
 
         InetSocketAddress source = (InetSocketAddress) localChannel.receive(buffer);
         if (source == null) {
-            Log.w(TAG, "no source of packet, ignored");
+            logger.w("Ignored packet without source");
             return;
         }
-
-        Log.v(TAG, "Accepted UDP channel from " + source.getPort());
 
         UdpProxySession session = getSession(source.getPort());
         if (session == null) {
-            Log.w(TAG, "no session for packet, ignored");
+            logger.w("Ignored packet from %d without session", source.getPort());
             return;
         }
+
+        logger.v("Accepted channel from %d, session %08x", source.getPort(), session.hashCode());
 
         buffer.flip();
 
         session.send(buffer);
 
-        Log.v(TAG, "Sent out UDP session local:" + session.getSourcePort() +
-                " -> proxy:" + port() +
-                " -> proxy:" + session.socket().getLocalPort() +
-                " -> " + session.getRemoteAddress().getHostAddress() + ":" + session.getRemotePort());
+        logger.v("Sent out session %08x local:%d -> in:%d -> out:%d -> %s:%d",
+                session.hashCode(),
+                session.getSourcePort(),
+                port(),
+                session.socket().getLocalPort(),
+                session.getRemoteAddress().getHostAddress(), session.getRemotePort());
     }
 
     /**
@@ -155,11 +162,12 @@ public class UdpProxy extends AbstractTransportProxy<DatagramChannel, DatagramCh
         InetSocketAddress address = new InetSocketAddress(
                 ProxVpnService.FAKE_CLIENT_ADDRESS, session.getSourcePort());
 
-        Log.v(TAG, "Received in UDP session " +
-                address.getHostString() + ":" + session.getSourcePort() +
-                " <- " + serverChannel.socket().getLocalAddress().getHostAddress() + ":" + port() +
-                " <- proxy:" + session.socket().getLocalPort() +
-                " <- " + session.getRemoteAddress().getHostAddress() + ":" + session.getRemotePort());
+        logger.v("Received in session %08x %s:%d <- in:%d <- out:%d <- %s:%d",
+                session.hashCode(),
+                address.getHostString(), session.getSourcePort(),
+                port(),
+                session.socket().getLocalPort(),
+                session.getRemoteAddress().getHostAddress(), session.getRemotePort());
 
         serverChannel.send(buffer, address);
     }
@@ -172,8 +180,14 @@ public class UdpProxy extends AbstractTransportProxy<DatagramChannel, DatagramCh
      */
     @Override
     public UdpProxySession finishSession(int sourcePort) {
-        Log.v(TAG, "Finished UDP session local:" + sourcePort);
-        return super.finishSession(sourcePort);
+        UdpProxySession session = super.finishSession(sourcePort);
+        if (session == null) {
+            logger.v("No session to finish at port %d", sourcePort);
+            return null;
+        } else {
+            logger.v("Finished session %08x", session.hashCode());
+            return session;
+        }
     }
 
 }

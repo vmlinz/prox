@@ -18,8 +18,6 @@
 
 package me.xingrz.prox.tcp;
 
-import android.util.Log;
-
 import org.apache.commons.io.IOUtils;
 
 import java.io.IOException;
@@ -29,13 +27,13 @@ import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 
 import me.xingrz.prox.ProxVpnService;
+import me.xingrz.prox.logging.FormattingLogger;
+import me.xingrz.prox.logging.FormattingLoggers;
 import me.xingrz.prox.tcp.tunnel.IncomingTunnel;
 import me.xingrz.prox.tcp.tunnel.OutgoingTunnel;
 import me.xingrz.prox.transport.AbstractTransportProxy;
 
 public class TcpProxySession extends AbstractTransportProxy.Session {
-
-    private static final String TAG = "TcpProxySession";
 
     private IncomingTunnel localTunnel;
     private OutgoingTunnel remoteTunnel;
@@ -43,6 +41,11 @@ public class TcpProxySession extends AbstractTransportProxy.Session {
     public TcpProxySession(Selector selector, int sourcePort,
                            InetAddress remoteAddress, int remotePort) throws IOException {
         super(selector, sourcePort, remoteAddress, remotePort);
+    }
+
+    @Override
+    public FormattingLogger getLogger() {
+        return FormattingLoggers.getContextLogger(String.format("%08x", hashCode()));
     }
 
     @Override
@@ -56,19 +59,43 @@ public class TcpProxySession extends AbstractTransportProxy.Session {
     }
 
     public void accept(SocketChannel localChannel) throws IOException {
-        localTunnel = new IncomingTunnel(selector, localChannel);
-        remoteTunnel = new OutgoingTunnel(selector, new InetSocketAddress(getRemoteAddress(), getRemotePort()));
+        localTunnel = new IncomingTunnel(selector, localChannel, String.format("%08x", hashCode())) {
+            @Override
+            protected void onParsedHost(String host) {
+                //connect(host);
+            }
+        };
 
+        logger.v("Established incoming tunnel local:%d <=> proxy:%d",
+                getSourcePort(), localTunnel.socket().getLocalPort());
+
+        remoteTunnel = new OutgoingTunnel(selector, String.format("%08x", hashCode()));
         ProxVpnService.getInstance().protect(remoteTunnel.socket());
+
+        logger.v("Established outgoing tunnel proxy:%d -> internet",
+                remoteTunnel.socket().getLocalPort());
+
+        connect(null);
+    }
+
+    private void connect(String host) {
+        logger.v("Parsed HTTP Host: %s", host);
 
         localTunnel.setBrother(remoteTunnel);
         remoteTunnel.setBrother(localTunnel);
-        remoteTunnel.connect();
 
-        Log.v(TAG, "Tunneling TCP session local:" + getSourcePort()
-                + " <=> proxy:" + localChannel.socket().getLocalPort()
-                + " <=> proxy:" + remoteTunnel.socket().getLocalPort()
-                + " <=> " + getRemoteAddress().getHostAddress() + ":" + getRemotePort());
+        try {
+            remoteTunnel.connect(new InetSocketAddress(getRemoteAddress(), getRemotePort()));
+        } catch (IOException e) {
+            logger.w(e, "Error connecting outgoing tunnel to remote host");
+            IOUtils.closeQuietly(this);
+            return;
+        }
+
+        logger.v("Tunneling local:%d <=> in:%d <=> out:%d <=> %s:%d",
+                getSourcePort(),
+                localTunnel.socket().getLocalPort(), remoteTunnel.socket().getLocalPort(),
+                getRemoteAddress().getHostAddress(), getRemotePort());
     }
 
 }

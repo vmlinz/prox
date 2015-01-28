@@ -23,10 +23,21 @@ import java.nio.ByteBuffer;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 
+import me.xingrz.prox.logging.FormattingLogger;
+import me.xingrz.prox.logging.FormattingLoggers;
+import me.xingrz.prox.tcp.http.HttpHeaderParser;
+
 public class IncomingTunnel extends Tunnel {
 
-    public IncomingTunnel(Selector selector, SocketChannel channel) {
-        super(selector, channel);
+    private boolean firstBufferReceived = false;
+
+    public IncomingTunnel(Selector selector, SocketChannel channel, String sessionKey) {
+        super(selector, channel, sessionKey);
+    }
+
+    @Override
+    protected FormattingLogger getLogger(String sessionKey) {
+        return FormattingLoggers.getContextLogger(sessionKey);
     }
 
     @Override
@@ -36,7 +47,25 @@ public class IncomingTunnel extends Tunnel {
 
     @Override
     protected void afterReceived(ByteBuffer buffer) throws IOException {
+        // TODO: 以后要考虑 Header 太长导致 Host 不在第一个 buffer 里的情况
+        if (firstBufferReceived) {
+            return;
+        }
 
+        if (HttpHeaderParser.maybeHttpRequest(buffer)) {
+            String host = HttpHeaderParser.parseHttpHost(buffer);
+            if (host == null) {
+                logger.v("Not a HTTP request");
+            } else {
+                logger.v("HTTP request to host: %s\n%s", host, new String(buffer.array(), 0, buffer.limit()));
+                onParsedHost(host);
+            }
+        } else {
+            logger.v("Not a HTTP request");
+            onParsedHost(null);
+        }
+
+        firstBufferReceived = true;
     }
 
     @Override
@@ -47,6 +76,14 @@ public class IncomingTunnel extends Tunnel {
     @Override
     protected void onClose(boolean finished) {
 
+    }
+
+    /**
+     * 解析完头部
+     *
+     * @param host Host 字段，不一定有，可能是 {@code null}
+     */
+    protected void onParsedHost(String host) {
     }
 
 }

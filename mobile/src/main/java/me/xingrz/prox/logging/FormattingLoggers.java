@@ -89,6 +89,11 @@ public class FormattingLoggers {
             public void e(Throwable tr, String msg, Object... args) {
                 Log.e(tag, String.format(msg, args), tr);
             }
+
+            @Override
+            public String getTag() {
+                return tag;
+            }
         };
     }
 
@@ -138,6 +143,11 @@ public class FormattingLoggers {
             @Override
             public void e(Throwable tr, String msg, Object... args) {
                 Log.e(tag, String.format(msg, args), tr);
+            }
+
+            @Override
+            public String getTag() {
+                return tag;
             }
         };
     }
