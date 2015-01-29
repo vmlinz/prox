@@ -36,8 +36,8 @@ import me.xingrz.prox.transport.AbstractTransportProxy;
 
 public class TcpProxySession extends AbstractTransportProxy.Session {
 
-    private IncomingTunnel localTunnel;
-    private OutgoingTunnel remoteTunnel;
+    private IncomingTunnel incomingTunnel;
+    private OutgoingTunnel outgoingTunnel;
 
     public TcpProxySession(Selector selector, int sourcePort,
                            InetAddress remoteAddress, int remotePort) throws IOException {
@@ -51,53 +51,53 @@ public class TcpProxySession extends AbstractTransportProxy.Session {
 
     @Override
     public void close() throws IOException {
-        IOUtils.closeQuietly(localTunnel);
-        IOUtils.closeQuietly(remoteTunnel);
+        IOUtils.closeQuietly(incomingTunnel);
+        IOUtils.closeQuietly(outgoingTunnel);
     }
 
     public boolean isEstablished() {
-        return remoteTunnel != null && remoteTunnel.isTunnelEstablished();
+        return outgoingTunnel != null && outgoingTunnel.isTunnelEstablished();
     }
 
     public void accept(SocketChannel localChannel) throws IOException {
-        localTunnel = new IncomingTunnel(selector, localChannel, String.format("%08x", hashCode())) {
+        incomingTunnel = new IncomingTunnel(selector, localChannel, String.format("%08x", hashCode())) {
             @Override
             protected void onParsedHost(final String host) {
                 if (host == null) {
                     logger.v("Not a HTTP request");
+                    connect(null);
                 } else {
                     AutoConfigManager.getInstance().lookup(host, new AutoConfigManager.ProxyLookupCallback() {
                         @Override
                         public void onProxyLookup(String proxy) {
                             logger.v("HTTP request to host: %s, proxy: %s", host, proxy);
+                            connect(proxy);
                         }
                     });
                 }
-
-                //connect(host);
             }
         };
 
         logger.v("Established incoming tunnel local:%d <=> proxy:%d",
-                getSourcePort(), localTunnel.socket().getLocalPort());
+                getSourcePort(), incomingTunnel.socket().getLocalPort());
 
-        remoteTunnel = new OutgoingTunnel(selector, String.format("%08x", hashCode()));
-        ProxVpnService.getInstance().protect(remoteTunnel.socket());
+        outgoingTunnel = new OutgoingTunnel(selector, String.format("%08x", hashCode()));
+        ProxVpnService.getInstance().protect(outgoingTunnel.socket());
 
         logger.v("Established outgoing tunnel proxy:%d -> internet",
-                remoteTunnel.socket().getLocalPort());
+                outgoingTunnel.socket().getLocalPort());
 
-        connect(null);
+        incomingTunnel.setBrother(outgoingTunnel);
+        outgoingTunnel.setBrother(incomingTunnel);
+
+        incomingTunnel.beginReceiving();
     }
 
-    private void connect(String host) {
-        logger.v("Parsed HTTP Host: %s", host);
-
-        localTunnel.setBrother(remoteTunnel);
-        remoteTunnel.setBrother(localTunnel);
+    private void connect(String proxy) {
+        logger.v("Connect thought proxy: %s", proxy);
 
         try {
-            remoteTunnel.connect(new InetSocketAddress(getRemoteAddress(), getRemotePort()));
+            outgoingTunnel.connect(new InetSocketAddress(getRemoteAddress(), getRemotePort()));
         } catch (IOException e) {
             logger.w(e, "Error connecting outgoing tunnel to remote host");
             IOUtils.closeQuietly(this);
@@ -106,7 +106,7 @@ public class TcpProxySession extends AbstractTransportProxy.Session {
 
         logger.v("Tunneling local:%d <=> in:%d <=> out:%d <=> %s:%d",
                 getSourcePort(),
-                localTunnel.socket().getLocalPort(), remoteTunnel.socket().getLocalPort(),
+                incomingTunnel.socket().getLocalPort(), outgoingTunnel.socket().getLocalPort(),
                 getRemoteAddress().getHostAddress(), getRemotePort());
     }
 

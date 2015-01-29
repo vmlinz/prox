@@ -92,11 +92,6 @@ public abstract class Tunnel implements Closeable {
         this.brother = brother;
     }
 
-    protected final void tunnelEstablished() throws IOException {
-        beginReceiving();
-        brother.beginReceiving();
-    }
-
     public final void beginReceiving() throws IOException {
         if (channel.isBlocking()) {
             channel.configureBlocking(false);

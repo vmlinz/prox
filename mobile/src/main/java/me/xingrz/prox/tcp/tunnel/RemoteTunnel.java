@@ -20,7 +20,7 @@ package me.xingrz.prox.tcp.tunnel;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.net.Socket;
+import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
@@ -34,11 +34,19 @@ public abstract class RemoteTunnel extends Tunnel {
         return channel;
     }
 
+    private ByteBuffer beginning;
+
     public RemoteTunnel(Selector selector, String sessionKey) throws IOException {
         super(selector, makeChannel(), sessionKey);
     }
 
-    protected abstract void onConnected() throws IOException;
+    protected void onConnected() throws IOException {
+        beginReceiving();
+
+        logger.v("Connected and start to write buffered %d bytes beginning", beginning.remaining());
+        write(beginning, true);
+        beginning.clear();
+    }
 
     public final void onConnectible() throws IOException {
         if (channel.finishConnect()) {
@@ -52,6 +60,35 @@ public abstract class RemoteTunnel extends Tunnel {
         } else {
             channel.register(selector, SelectionKey.OP_CONNECT, this);
             logger.v("Waiting for OP_CONNECT");
+        }
+    }
+
+    /**
+     * {@inheritDoc}
+     * {@link me.xingrz.prox.tcp.tunnel.RemoteTunnel} 的 {@link #write(java.nio.ByteBuffer, boolean)}
+     * 方法允许在 {@link #connect(java.net.InetSocketAddress)} 前调用，数据会先缓存在内部
+     *
+     * @param buffer              即将发送的数据
+     * @param shouldKeepRemaining 如果没发送完整，是否等 {@link #channel} 再次就绪后继续写入
+     * @return
+     * @throws IOException
+     */
+    @Override
+    protected boolean write(ByteBuffer buffer, boolean shouldKeepRemaining) throws IOException {
+        if (!channel.isConnected() && shouldKeepRemaining) {
+            logger.v("Writes is buffered, since tunnel is not connected");
+
+            if (beginning == null) {
+                beginning = ByteBuffer.allocate(buffer.capacity());
+            }
+
+            beginning.clear();
+            beginning.put(buffer);
+            beginning.flip();
+
+            return false;
+        } else {
+            return super.write(buffer, shouldKeepRemaining);
         }
     }
 
