@@ -34,7 +34,7 @@ public abstract class RemoteTunnel extends Tunnel {
         return channel;
     }
 
-    private ByteBuffer beginning;
+    private ByteBuffer beginning = ByteBuffer.allocate(0xFFFF);
 
     public RemoteTunnel(Selector selector, String sessionKey) throws IOException {
         super(selector, makeChannel(), sessionKey);
@@ -43,6 +43,7 @@ public abstract class RemoteTunnel extends Tunnel {
     protected void onConnected() throws IOException {
         beginReceiving();
 
+        beginning.flip();
         logger.v("Connected and start to write buffered %d bytes beginning", beginning.remaining());
         write(beginning, true);
         beginning.clear();
@@ -76,17 +77,9 @@ public abstract class RemoteTunnel extends Tunnel {
     @Override
     protected boolean write(ByteBuffer buffer, boolean shouldKeepRemaining) throws IOException {
         if (!channel.isConnected() && shouldKeepRemaining) {
-            logger.v("Writes is buffered, since tunnel is not connected");
-
-            if (beginning == null) {
-                beginning = ByteBuffer.allocate(buffer.capacity());
-            }
-
-            beginning.clear();
+            logger.v("Buffered %d bytes of write since tunnel is not connected", buffer.remaining());
             beginning.put(buffer);
-            beginning.flip();
-
-            return false;
+            return true;
         } else {
             return super.write(buffer, shouldKeepRemaining);
         }

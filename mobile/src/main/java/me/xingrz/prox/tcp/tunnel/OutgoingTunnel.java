@@ -37,12 +37,6 @@ public class OutgoingTunnel extends RemoteTunnel {
     }
 
     @Override
-    protected void onConnected() throws IOException {
-        super.onConnected();
-        logger.v("Connected to remote host");
-    }
-
-    @Override
     public boolean isTunnelEstablished() {
         return true;
     }

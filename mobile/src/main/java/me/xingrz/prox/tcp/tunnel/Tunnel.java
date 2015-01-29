@@ -163,12 +163,14 @@ public abstract class Tunnel implements Closeable {
     protected boolean write(ByteBuffer buffer, boolean shouldKeepRemaining) throws IOException {
         try {
             logger.v("Writing to channel");
+
             while (buffer.hasRemaining()) {
                 if (channel.write(buffer) == 0) {
-                    logger.v("Writing ended");
                     break;
                 }
             }
+
+            logger.v("Writing ended");
         } catch (IOException e) {
             logger.w(e, "Failed writing to " + channelToString());
             return false;
