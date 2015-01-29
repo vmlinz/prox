@@ -29,6 +29,7 @@ import java.nio.channels.SocketChannel;
 import me.xingrz.prox.ProxVpnService;
 import me.xingrz.prox.logging.FormattingLogger;
 import me.xingrz.prox.logging.FormattingLoggers;
+import me.xingrz.prox.pac.AutoConfigManager;
 import me.xingrz.prox.tcp.tunnel.IncomingTunnel;
 import me.xingrz.prox.tcp.tunnel.OutgoingTunnel;
 import me.xingrz.prox.transport.AbstractTransportProxy;
@@ -61,7 +62,18 @@ public class TcpProxySession extends AbstractTransportProxy.Session {
     public void accept(SocketChannel localChannel) throws IOException {
         localTunnel = new IncomingTunnel(selector, localChannel, String.format("%08x", hashCode())) {
             @Override
-            protected void onParsedHost(String host) {
+            protected void onParsedHost(final String host) {
+                if (host == null) {
+                    logger.v("Not a HTTP request");
+                } else {
+                    AutoConfigManager.getInstance().lookup(host, new AutoConfigManager.ProxyLookupCallback() {
+                        @Override
+                        public void onProxyLookup(String proxy) {
+                            logger.v("HTTP request to host: %s, proxy: %s", host, proxy);
+                        }
+                    });
+                }
+
                 //connect(host);
             }
         };

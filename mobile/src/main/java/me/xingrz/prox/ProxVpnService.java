@@ -34,6 +34,7 @@ import me.xingrz.prox.internet.IPHeader;
 import me.xingrz.prox.internet.IPv4Header;
 import me.xingrz.prox.logging.FormattingLogger;
 import me.xingrz.prox.logging.FormattingLoggers;
+import me.xingrz.prox.pac.AutoConfigManager;
 import me.xingrz.prox.tcp.TcpHeader;
 import me.xingrz.prox.tcp.TcpProxy;
 import me.xingrz.prox.tcp.TcpProxySession;
@@ -75,14 +76,10 @@ public class ProxVpnService extends VpnService implements Runnable {
     public static final String EXTRA_PAC_URL = "pac_url";
 
 
-    private String configUrl;
-
     private Thread thread;
 
     private ParcelFileDescriptor intf;
     private FileOutputStream ingoing;
-
-    private ProxAutoConfig pac;
 
     private byte[] packet;
 
@@ -108,6 +105,8 @@ public class ProxVpnService extends VpnService implements Runnable {
 
         tcpHeader = new TcpHeader(packet);
         udpHeader = new UdpHeader(packet);
+
+        AutoConfigManager.createInstance();
     }
 
     @Override
@@ -116,12 +115,17 @@ public class ProxVpnService extends VpnService implements Runnable {
             thread.interrupt();
         }
 
-        configUrl = intent.getStringExtra(EXTRA_PAC_URL);
+        thread = new Thread(this, "VpnServer");
 
-        thread = new Thread(this, "VPNServer");
-        thread.start();
+        String configUrl = intent.getStringExtra(EXTRA_PAC_URL);
+        AutoConfigManager.getInstance().load(configUrl, new AutoConfigManager.ConfigLoadCallback() {
+            @Override
+            public void onConfigLoad() {
+                thread.start();
+                logger.d("VPN service started");
 
-        logger.d("VPN service started with PAC: %s", configUrl);
+            }
+        });
 
         return START_NOT_STICKY;
     }
@@ -143,9 +147,7 @@ public class ProxVpnService extends VpnService implements Runnable {
         IOUtils.closeQuietly(tcpProxy);
         IOUtils.closeQuietly(udpProxy);
 
-        if (pac != null) {
-            pac.destroy();
-        }
+        AutoConfigManager.destroy();
 
         instance = null;
 
@@ -159,17 +161,14 @@ public class ProxVpnService extends VpnService implements Runnable {
         FileInputStream outgoing;
 
         try {
-            pac = ProxAutoConfig.fromUrl(configUrl);
-            logger.d("PAC loaded");
-
-            intf = establish();
-            logger.d("VPN interface established");
-
             tcpProxy = new TcpProxy();
             logger.d("TCP proxy started");
 
             udpProxy = new UdpProxy();
             logger.d("UDP proxy started");
+
+            intf = establish();
+            logger.d("VPN interface established");
 
             ingoing = new FileOutputStream(intf.getFileDescriptor());
             outgoing = new FileInputStream(intf.getFileDescriptor());

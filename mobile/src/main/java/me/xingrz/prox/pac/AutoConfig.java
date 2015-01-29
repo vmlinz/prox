@@ -16,9 +16,9 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-package me.xingrz.prox;
+package me.xingrz.prox.pac;
 
-import android.util.Log;
+import android.util.LruCache;
 
 import org.apache.http.HttpResponse;
 import org.apache.http.client.methods.HttpGet;
@@ -30,14 +30,17 @@ import org.mozilla.javascript.Scriptable;
 
 import java.io.IOException;
 
+import me.xingrz.prox.logging.FormattingLogger;
+import me.xingrz.prox.logging.FormattingLoggers;
+
 /**
  * PAC 解析器
  *
  * @author XiNGRZ
  */
-public class ProxAutoConfig {
+class AutoConfig {
 
-    private static final String TAG = "ProxAutoConfig";
+    private static final FormattingLogger logger = FormattingLoggers.getContextLogger();
 
     /**
      * 从 {@code url} 抓取 PAC 内容并返回新实例
@@ -46,14 +49,16 @@ public class ProxAutoConfig {
      * @return 新的 {@code ProxAutoConfig} 实例
      * @throws IOException
      */
-    public static ProxAutoConfig fromUrl(String url) throws IOException {
+    public static AutoConfig fromUrl(String url) throws IOException {
         HttpResponse response = new DefaultHttpClient().execute(new HttpGet(url));
         String config = EntityUtils.toString(response.getEntity());
-        return new ProxAutoConfig(config);
+        return new AutoConfig(config);
     }
 
     private static final String PROXY_PREFIX = "PROXY ";
     private static final String PAC_FUNCTION = "FindProxyForURL";
+
+    private final LruCache<String, String> cache = new LruCache<>(200);
 
     private final Context rhino;
     private final Scriptable scope;
@@ -64,7 +69,7 @@ public class ProxAutoConfig {
      *
      * @param config PAC 内容
      */
-    public ProxAutoConfig(String config) {
+    public AutoConfig(String config) {
         rhino = Context.enter();
         rhino.setOptimizationLevel(-1);
 
@@ -75,37 +80,45 @@ public class ProxAutoConfig {
     }
 
     /**
-     * 查找指定 {@code url} 或 {@code host} 的代理地址
+     * 查找指定主机的代理地址
      *
-     * @param url  URL，与 {@code host} 不能同时为 {@code null}
-     * @param host 主机名，与 {@code url} 不能同时为 {@code null}
+     * @param host 主机名
      * @return 代理服务器地址，或 {@code null} 表示直连
      */
-    public String findProxyForUrl(String url, String host) {
+    public String findProxyForHost(String host) {
+        String cached = cache.get(host);
+        if (cached != null) {
+            return parse(cached);
+        }
+
         if (handler == null) {
-            Log.w(TAG, "no handler function found");
+            logger.w("no handler function found");
             return null;
         }
 
-        Object result = handler.call(rhino, scope, scope, new Object[]{url, host});
+        Object result = handler.call(rhino, scope, scope, new Object[]{null, host});
 
         if (result == null) {
-            Log.w(TAG, "null result");
+            logger.w("null result");
             return null;
         }
 
         if (!(result instanceof String)) {
-            Log.w(TAG, "result not String");
+            logger.w("result not String");
             return null;
         }
 
         String config = (String) result;
+        cache.put(host, config);
+        return parse(config);
+    }
 
+    private String parse(String config) {
         if (config.startsWith(PROXY_PREFIX)) {
             return config.split(";")[0].substring(PROXY_PREFIX.length());
+        } else {
+            return null;
         }
-
-        return null;
     }
 
     /**
@@ -116,6 +129,8 @@ public class ProxAutoConfig {
             Context.exit();
         } catch (IllegalStateException ignored) {
         }
+
+        cache.evictAll();
     }
 
 }

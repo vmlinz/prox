@@ -23,6 +23,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 
+import me.xingrz.prox.ProxVpnService;
 import me.xingrz.prox.logging.FormattingLogger;
 import me.xingrz.prox.logging.FormattingLoggers;
 import me.xingrz.prox.tcp.http.HttpHeaderParser;
@@ -52,15 +53,7 @@ public class IncomingTunnel extends Tunnel {
             return;
         }
 
-        String host = HttpHeaderParser.parseHost(buffer.asReadOnlyBuffer());
-
-        if (host == null) {
-            logger.v("Not a HTTP request");
-        } else {
-            logger.v("HTTP request to host: %s", host);
-        }
-
-        onParsedHost(host);
+        onParsedHost(HttpHeaderParser.parseHost(buffer.asReadOnlyBuffer()));
 
         firstBufferReceived = true;
     }
