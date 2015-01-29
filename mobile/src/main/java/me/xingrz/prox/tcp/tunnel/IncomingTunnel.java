@@ -52,18 +52,15 @@ public class IncomingTunnel extends Tunnel {
             return;
         }
 
-        if (HttpHeaderParser.maybeHttpRequest(buffer)) {
-            String host = HttpHeaderParser.parseHttpHost(buffer);
-            if (host == null) {
-                logger.v("Not a HTTP request");
-            } else {
-                logger.v("HTTP request to host: %s\n%s", host, new String(buffer.array(), 0, buffer.limit()));
-                onParsedHost(host);
-            }
-        } else {
+        String host = HttpHeaderParser.parseHost(buffer.asReadOnlyBuffer());
+
+        if (host == null) {
             logger.v("Not a HTTP request");
-            onParsedHost(null);
+        } else {
+            logger.v("HTTP request to host: %s", host);
         }
+
+        onParsedHost(host);
 
         firstBufferReceived = true;
     }

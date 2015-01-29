@@ -18,15 +18,16 @@
 
 package me.xingrz.prox.tcp.http;
 
-import android.util.Log;
-
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
+import me.xingrz.prox.logging.FormattingLogger;
+import me.xingrz.prox.logging.FormattingLoggers;
+
 public class HttpHeaderParser {
 
-    private static final String TAG = "HttpHeaderParser";
+    private static final FormattingLogger logger = FormattingLoggers.getContextLogger();
 
     private static final List<String> SUPPORT_HTTP_METHOD = new ArrayList<>();
 
@@ -41,23 +42,41 @@ public class HttpHeaderParser {
         SUPPORT_HTTP_METHOD.add("CONNECT");
     }
 
-    public static boolean maybeHttpRequest(ByteBuffer buffer) {
-        switch (buffer.array()[0]) {
-            case 'G': // GET
-            case 'P': // POST, PUT
-            case 'D': // DELETE
-            case 'H': // HEAD
-            case 'O': // OPTIONS
-            case 'T': // TRACE
-            case 'C': // CONNECT
-                return true;
+    private static final byte HTTP_GET = 'G';
+    private static final byte HTTP_POST_OR_PUT = 'P';
+    private static final byte HTTP_DELETE = 'D';
+    private static final byte HTTP_HEAD = 'H';
+    private static final byte HTTP_OPTIONS = 'O';
+    private static final byte HTTP_TRACE = 'T';
+    private static final byte HTTP_CONNECT = 'C';
+
+    private static final byte TLS_HANDSHAKE = 0x16;
+    private static final byte TLS_MESSAGE_CLIENT_HELLO = 0X01;
+    private static final short TLS_EXTENSION_SERVER_NAME = 0x0000;
+    private static final byte TLS_SNI_HOST_NAME = 0x00;
+
+    public static String parseHost(ByteBuffer buffer) {
+        switch (buffer.get(0)) {
+            case HTTP_GET:
+            case HTTP_POST_OR_PUT:
+            case HTTP_DELETE:
+            case HTTP_HEAD:
+            case HTTP_OPTIONS:
+            case HTTP_TRACE:
+            case HTTP_CONNECT:
+                return parseHttpHost(buffer);
+            case TLS_HANDSHAKE:
+                return parseTlsHost(buffer);
             default:
-                return false;
+                return null;
         }
     }
 
-    public static String parseHttpHost(ByteBuffer buffer) {
-        String[] headers = new String(buffer.array(), buffer.position(), buffer.position() + buffer.limit()).split("\r\n");
+    private static String parseHttpHost(ByteBuffer buffer) {
+        byte[] bytes = new byte[buffer.remaining()];
+        buffer.get(bytes);
+
+        String[] headers = new String(bytes).split("\r\n");
         if (headers.length < 2) {
             // CONNECT www.google.com:443 HTTP/1.1\r\n
             // \r\n
@@ -85,6 +104,118 @@ public class HttpHeaderParser {
         }
 
         return null;
+    }
+
+    /**
+     * 尝试从 TLS client hello 中的 SNI 读出 server_name
+     * http://tools.ietf.org/html/rfc4366#section-3.1
+     *
+     * @param buffer 缓冲区
+     * @return Host 或 {@value null}
+     */
+    private static String parseTlsHost(ByteBuffer buffer) {
+        if (buffer.limit() <= 5) {
+            return null;
+        }
+
+        // Handshake (1) + SSL Major Version (1) + SSL Minor Version (1)
+        buffer.position(3);
+
+        // Total Length
+        if (buffer.getShort() != buffer.remaining()) {
+            logger.v("Not a SSL handshake: wrong length");
+            return null;
+        }
+
+        int skipping;
+
+        try {
+            while (buffer.hasRemaining()) {
+                // Message Type
+                byte messageType = buffer.get();
+
+                // Message Length
+                skipping = (0xFF0000 & (buffer.get() << 16))
+                        | (0x00FF00 & (buffer.get() << 8))
+                        | (0x0000FF & buffer.get());
+
+                if (skipping > buffer.remaining()) {
+                    logger.v("Not a SSL handshake: message length out of bound");
+                    return null;
+                }
+
+                if (messageType != TLS_MESSAGE_CLIENT_HELLO) {
+                    buffer.position(buffer.position() + skipping);
+                    continue;
+                }
+
+                // TLS Version
+                buffer.position(buffer.position() + 2);
+
+                // Random
+                buffer.position(buffer.position() + 32);
+
+                // Session ID
+                skipping = buffer.get();
+                buffer.position(buffer.position() + skipping);
+
+                // Cipher Suites
+                skipping = buffer.getShort();
+                buffer.position(buffer.position() + skipping);
+
+                // Compression Methods
+                skipping = buffer.get();
+                buffer.position(buffer.position() + skipping);
+
+                // Extensions
+                buffer.position(buffer.position() + 2);
+                while (buffer.hasRemaining()) {
+                    // Extension Type
+                    short extensionType = buffer.getShort();
+
+                    // Extension Length
+                    skipping = buffer.getShort();
+
+                    if (extensionType != TLS_EXTENSION_SERVER_NAME) {
+                        buffer.position(buffer.position() + skipping);
+                        continue;
+                    }
+
+                    // Server Name list
+                    buffer.position(buffer.position() + 2);
+                    while (buffer.hasRemaining()) {
+                        // Name Type
+                        byte nameType = buffer.get();
+
+                        // Name Length
+                        skipping = buffer.getShort();
+
+                        if (nameType != TLS_SNI_HOST_NAME) {
+                            buffer.position(buffer.position() + skipping);
+                            continue;
+                        }
+
+                        if (buffer.remaining() < skipping) {
+                            logger.v("Not a SSL handshake: server name length out of bound");
+                            return null;
+                        }
+
+                        byte[] bytes = new byte[skipping];
+                        buffer.get(bytes);
+
+                        String name = new String(bytes);
+                        logger.v("Found SNI: %s", name);
+                        return name;
+                    }
+                }
+            }
+
+            logger.v("No SNI found");
+            return null;
+        } catch (IllegalArgumentException e) {
+            logger.v("Not a SSL handshake: out of bound");
+            return null;
+        }
     }
 
 }
