@@ -200,14 +200,6 @@ public abstract class AbstractTransportProxy
     }
 
     /**
-     * 接受从 VPN 传来的通道
-     *
-     * @param localChannel 从 VPN 传来的本地通道
-     * @throws IOException
-     */
-    public abstract void accept(L localChannel) throws IOException;
-
-    /**
      * 创建新的会话，子类必须重载此方法
      *
      * @param sourcePort    来源端口，作为标识

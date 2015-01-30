@@ -18,6 +18,8 @@
 
 package me.xingrz.prox.tcp.tunnel;
 
+import org.apache.commons.io.IOUtils;
+
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.Selector;
@@ -26,6 +28,8 @@ import me.xingrz.prox.logging.FormattingLogger;
 import me.xingrz.prox.logging.FormattingLoggers;
 
 public class OutgoingTunnel extends RemoteTunnel {
+
+    private ProxyHandler proxy;
 
     public OutgoingTunnel(Selector selector, String sessionKey) throws IOException {
         super(selector, sessionKey);
@@ -36,24 +40,76 @@ public class OutgoingTunnel extends RemoteTunnel {
         return FormattingLoggers.getContextLogger(sessionKey);
     }
 
+    public void setProxy(ProxyHandler proxy) {
+        this.proxy = proxy;
+    }
+
     @Override
-    public boolean isTunnelEstablished() {
+    protected void onConnected() {
+    }
+
+    @Override
+    protected void handshake() {
+        if (proxy == null) {
+            super.handshake();
+            return;
+        }
+
+        ByteBuffer handshake = proxy.handshake();
+        if (handshake == null || !handshake.hasRemaining()) {
+            super.handshake();
+            return;
+        }
+
+        logger.v("Handshaking");
+
+        if (!write(handshake)) {
+            logger.w("Failed to handshake");
+            IOUtils.closeQuietly(this);
+        }
+    }
+
+    @Override
+    protected boolean afterReceived(ByteBuffer buffer) {
+        if (proxy == null) {
+            return false;
+        }
+
+        if (proxy.isEstablished()) {
+            return false;
+        }
+
+        logger.v("Received handshake response");
+
+        if (proxy.establish(buffer)) {
+            logger.v("Handshake finished, established");
+            establish();
+        }
+
         return true;
     }
 
     @Override
-    protected void afterReceived(ByteBuffer buffer) throws IOException {
-
+    public boolean isEstablished() {
+        return super.isEstablished() && (proxy == null || proxy.isEstablished());
     }
 
     @Override
-    protected void beforeSending(ByteBuffer buffer) throws IOException {
-
+    protected void onEstablished() {
     }
 
     @Override
-    protected void onClose(boolean finished) {
+    protected void beforeSending(ByteBuffer buffer) {
+        if (proxy != null) {
+            proxy.beforeSending(buffer);
+        }
+    }
 
+    @Override
+    protected void onClose() {
+        if (proxy != null) {
+            proxy.onClose();
+        }
     }
 
 }

@@ -18,6 +18,8 @@
 
 package me.xingrz.prox.tcp;
 
+import android.net.Uri;
+
 import org.apache.commons.io.IOUtils;
 
 import java.io.IOException;
@@ -30,6 +32,7 @@ import me.xingrz.prox.ProxVpnService;
 import me.xingrz.prox.logging.FormattingLogger;
 import me.xingrz.prox.logging.FormattingLoggers;
 import me.xingrz.prox.pac.AutoConfigManager;
+import me.xingrz.prox.tcp.http.HttpConnectHandler;
 import me.xingrz.prox.tcp.tunnel.IncomingTunnel;
 import me.xingrz.prox.tcp.tunnel.OutgoingTunnel;
 import me.xingrz.prox.transport.AbstractTransportProxy;
@@ -56,7 +59,7 @@ public class TcpProxySession extends AbstractTransportProxy.Session {
     }
 
     public boolean isEstablished() {
-        return outgoingTunnel != null && outgoingTunnel.isTunnelEstablished();
+        return outgoingTunnel != null && outgoingTunnel.isEstablished();
     }
 
     public void accept(SocketChannel localChannel) throws IOException {
@@ -69,7 +72,7 @@ public class TcpProxySession extends AbstractTransportProxy.Session {
                 } else {
                     AutoConfigManager.getInstance().lookup(host, new AutoConfigManager.ProxyLookupCallback() {
                         @Override
-                        public void onProxyLookup(String proxy) {
+                        public void onProxyLookup(Uri proxy) {
                             logger.v("HTTP request to host: %s, proxy: %s", host, proxy);
                             connect(proxy);
                         }
@@ -93,11 +96,9 @@ public class TcpProxySession extends AbstractTransportProxy.Session {
         incomingTunnel.beginReceiving();
     }
 
-    private void connect(String proxy) {
-        logger.v("Connect thought proxy: %s", proxy);
-
+    private void connect(Uri proxy) {
         try {
-            outgoingTunnel.connect(new InetSocketAddress(getRemoteAddress(), getRemotePort()));
+            outgoingTunnel.connect(getDestinationAddress(proxy));
         } catch (IOException e) {
             logger.w(e, "Error connecting outgoing tunnel to remote host");
             IOUtils.closeQuietly(this);
@@ -108,6 +109,19 @@ public class TcpProxySession extends AbstractTransportProxy.Session {
                 getSourcePort(),
                 incomingTunnel.socket().getLocalPort(), outgoingTunnel.socket().getLocalPort(),
                 getRemoteAddress().getHostAddress(), getRemotePort());
+    }
+
+    private InetSocketAddress getDestinationAddress(Uri proxy) {
+        if (proxy != null) {
+            if (proxy.getScheme().equals(AutoConfigManager.PROXY_TYPE_HTTP)) {
+                outgoingTunnel.setProxy(new HttpConnectHandler(outgoingTunnel,
+                        getRemoteAddress().getHostAddress(), getRemotePort()));
+
+                return new InetSocketAddress(proxy.getHost(), proxy.getPort());
+            }
+        }
+
+        return new InetSocketAddress(getRemoteAddress(), getRemotePort());
     }
 
 }

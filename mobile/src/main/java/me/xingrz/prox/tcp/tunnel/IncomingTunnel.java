@@ -18,12 +18,10 @@
 
 package me.xingrz.prox.tcp.tunnel;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 
-import me.xingrz.prox.ProxVpnService;
 import me.xingrz.prox.logging.FormattingLogger;
 import me.xingrz.prox.logging.FormattingLoggers;
 import me.xingrz.prox.tcp.http.HttpHeaderParser;
@@ -42,30 +40,24 @@ public class IncomingTunnel extends Tunnel {
     }
 
     @Override
-    protected boolean isTunnelEstablished() {
-        return true;
-    }
-
-    @Override
-    protected void afterReceived(ByteBuffer buffer) throws IOException {
+    protected boolean afterReceived(ByteBuffer buffer) {
         // TODO: 以后要考虑 Header 太长导致 Host 不在第一个 buffer 里的情况
         if (firstBufferReceived) {
-            return;
+            return false;
         }
 
         onParsedHost(HttpHeaderParser.parseHost(buffer.asReadOnlyBuffer()));
 
         firstBufferReceived = true;
+        return false;
     }
 
     @Override
-    protected void beforeSending(ByteBuffer buffer) throws IOException {
-
+    protected void beforeSending(ByteBuffer buffer) {
     }
 
     @Override
-    protected void onClose(boolean finished) {
-
+    protected void onClose() {
     }
 
     /**

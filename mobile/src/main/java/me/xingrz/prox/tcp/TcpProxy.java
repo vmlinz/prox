@@ -31,8 +31,9 @@ import java.util.concurrent.TimeUnit;
 
 import me.xingrz.prox.logging.FormattingLogger;
 import me.xingrz.prox.logging.FormattingLoggers;
-import me.xingrz.prox.tcp.tunnel.RemoteTunnel;
-import me.xingrz.prox.tcp.tunnel.Tunnel;
+import me.xingrz.prox.selectable.Connectible;
+import me.xingrz.prox.selectable.Readable;
+import me.xingrz.prox.selectable.Writable;
 import me.xingrz.prox.transport.AbstractTransportProxy;
 
 public class TcpProxy extends AbstractTransportProxy<ServerSocketChannel, SocketChannel, TcpProxySession> {
@@ -69,11 +70,11 @@ public class TcpProxy extends AbstractTransportProxy<ServerSocketChannel, Socket
             if (key.isAcceptable()) {
                 accept(serverChannel.accept());
             } else if (key.isConnectable()) {
-                ((RemoteTunnel) key.attachment()).onConnectible();
+                ((Connectible) key.attachment()).onConnectible(key);
             } else if (key.isReadable()) {
-                ((Tunnel) key.attachment()).onReadable(key);
+                ((Readable) key.attachment()).onReadable(key);
             } else if (key.isWritable()) {
-                ((Tunnel) key.attachment()).onWritable(key);
+                ((Writable) key.attachment()).onWritable(key);
             }
         } catch (IOException e) {
             logger.w(e, "Proxy faced an error");
@@ -109,7 +110,6 @@ public class TcpProxy extends AbstractTransportProxy<ServerSocketChannel, Socket
      * @param localChannel 从 VPN 传来的本地通道
      * @throws IOException
      */
-    @Override
     public void accept(SocketChannel localChannel) throws IOException {
         int sourcePort = localChannel.socket().getPort();
 

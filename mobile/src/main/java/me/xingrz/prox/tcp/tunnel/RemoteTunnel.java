@@ -18,6 +18,8 @@
 
 package me.xingrz.prox.tcp.tunnel;
 
+import org.apache.commons.io.IOUtils;
+
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -25,7 +27,9 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 
-public abstract class RemoteTunnel extends Tunnel {
+import me.xingrz.prox.selectable.Connectible;
+
+public abstract class RemoteTunnel extends Tunnel implements Connectible {
 
     private static SocketChannel makeChannel() throws IOException {
         SocketChannel channel = SocketChannel.open();
@@ -34,55 +38,79 @@ public abstract class RemoteTunnel extends Tunnel {
         return channel;
     }
 
-    private ByteBuffer beginning = ByteBuffer.allocate(0xFFFF);
-
     public RemoteTunnel(Selector selector, String sessionKey) throws IOException {
         super(selector, makeChannel(), sessionKey);
     }
 
-    protected void onConnected() throws IOException {
-        beginReceiving();
-
-        beginning.flip();
-        logger.v("Connected and start to write buffered %d bytes beginning", beginning.remaining());
-        write(beginning, true);
-        beginning.clear();
-    }
-
-    public final void onConnectible() throws IOException {
-        if (channel.finishConnect()) {
-            onConnected();
-        }
-    }
-
     public void connect(InetSocketAddress address) throws IOException {
         if (channel.connect(address)) {
-            onConnected();
+            onConnectedInternal();
         } else {
             channel.register(selector, SelectionKey.OP_CONNECT, this);
             logger.v("Waiting for OP_CONNECT");
         }
     }
 
+    @Override
+    public final void onConnectible(SelectionKey key) {
+        try {
+            if (channel.finishConnect()) {
+                onConnectedInternal();
+            } else {
+                IOUtils.closeQuietly(this);
+            }
+        } catch (IOException e) {
+            logger.w(e, "Error finishing connect");
+            IOUtils.closeQuietly(this);
+        }
+    }
+
+    private void onConnectedInternal() throws IOException {
+        onConnected();
+        beginReceiving();
+        handshake();
+    }
+
+    protected abstract void onConnected();
+
+    protected void handshake() {
+        establish();
+    }
+
+    protected void establish() {
+        onEstablished();
+        writeRemaining();
+    }
+
+    protected abstract void onEstablished();
+
+    /**
+     * Tunnel 是否完成了握手、可以开始写入数据
+     *
+     * @return 已握手完成建立
+     */
+    public boolean isEstablished() {
+        return channel.isConnected();
+    }
+
     /**
      * {@inheritDoc}
-     * {@link me.xingrz.prox.tcp.tunnel.RemoteTunnel} 的 {@link #write(java.nio.ByteBuffer, boolean)}
+     * {@link me.xingrz.prox.tcp.tunnel.RemoteTunnel} 的 {@link #write(java.nio.ByteBuffer)}
      * 方法允许在 {@link #connect(java.net.InetSocketAddress)} 前调用，数据会先缓存在内部
      *
-     * @param buffer              即将发送的数据
-     * @param shouldKeepRemaining 如果没发送完整，是否等 {@link #channel} 再次就绪后继续写入
+     * @param buffer 即将发送的数据
      * @return
      * @throws IOException
      */
     @Override
-    protected boolean write(ByteBuffer buffer, boolean shouldKeepRemaining) throws IOException {
-        if (!channel.isConnected() && shouldKeepRemaining) {
+    public boolean write(ByteBuffer buffer) {
+        if (!isEstablished()) {
             logger.v("Buffered %d bytes of write since tunnel is not connected", buffer.remaining());
-            beginning.put(buffer);
-            return true;
-        } else {
-            return super.write(buffer, shouldKeepRemaining);
+            keepRemaining(buffer);
+            return false;
         }
+
+        return super.write(buffer);
     }
 
 }

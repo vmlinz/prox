@@ -18,6 +18,7 @@
 
 package me.xingrz.prox.pac;
 
+import android.net.Uri;
 import android.os.Handler;
 import android.os.HandlerThread;
 
@@ -49,7 +50,24 @@ public class AutoConfigManager {
     }
 
     public static interface ProxyLookupCallback {
-        public void onProxyLookup(String proxy);
+        public void onProxyLookup(Uri proxy);
+    }
+
+
+    public static final String PROXY_TYPE_HTTP = "http";
+    public static final String PROXY_TYPE_SHADOW_SOCKS = "ss";
+
+    public static Uri parse(String proxy) {
+        if (proxy == null) {
+            return null;
+        }
+
+        Uri uri = Uri.parse(proxy);
+        if (uri.getScheme().length() == 0) {
+            return uri.buildUpon().scheme(PROXY_TYPE_HTTP).build();
+        } else {
+            return uri.normalizeScheme();
+        }
     }
 
 
@@ -116,12 +134,18 @@ public class AutoConfigManager {
     }
 
     public void lookup(final String host, final ProxyLookupCallback callback) {
+        if (autoConfig == null) {
+            logger.v("Returned null for host %s since auto config is not ready and will be reload", host);
+            callback.onProxyLookup(null);
+            return;
+        }
+
         logger.v("Queued to lookup for host %s", host);
         handler.post(new Runnable() {
             @Override
             public void run() {
                 String proxy = autoConfig.findProxyForHost(host);
-                callback.onProxyLookup(proxy);
+                callback.onProxyLookup(parse(proxy));
                 logger.v("Finished for host %s: %s", host, proxy);
             }
         });

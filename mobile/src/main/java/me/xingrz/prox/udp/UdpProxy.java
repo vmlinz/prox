@@ -48,7 +48,7 @@ public class UdpProxy extends AbstractTransportProxy<DatagramChannel, DatagramCh
         DatagramChannel channel = DatagramChannel.open();
         channel.configureBlocking(false);
         channel.socket().bind(new InetSocketAddress(0));
-        channel.register(selector, SelectionKey.OP_READ);
+        channel.register(selector, SelectionKey.OP_READ, this);
         return channel;
     }
 
@@ -113,7 +113,6 @@ public class UdpProxy extends AbstractTransportProxy<DatagramChannel, DatagramCh
      * @param localChannel 代表网关的通道
      * @throws IOException
      */
-    @Override
     public void accept(DatagramChannel localChannel) throws IOException {
         buffer.clear();
 
