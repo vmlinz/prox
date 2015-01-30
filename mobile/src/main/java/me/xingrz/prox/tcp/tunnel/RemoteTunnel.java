@@ -105,7 +105,7 @@ public abstract class RemoteTunnel extends Tunnel implements Connectible {
     @Override
     public boolean write(ByteBuffer buffer) {
         if (!isEstablished()) {
-            logger.v("Buffered %d bytes of write since tunnel is not connected", buffer.remaining());
+            logger.v("Buffered %d bytes of write since tunnel is not established", buffer.remaining());
             keepRemaining(buffer);
             return false;
         }

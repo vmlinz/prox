@@ -117,7 +117,11 @@ public class TcpProxySession extends AbstractTransportProxy.Session {
                 outgoingTunnel.setProxy(new HttpConnectHandler(outgoingTunnel,
                         getRemoteAddress().getHostAddress(), getRemotePort()));
 
+                logger.v("Use HTTP proxy %s:%d", proxy.getPort(), proxy.getPort());
+
                 return new InetSocketAddress(proxy.getHost(), proxy.getPort());
+            } else {
+                logger.v("Unsupported proxy scheme %s, ignored", proxy.getScheme());
             }
         }
 

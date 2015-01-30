@@ -63,7 +63,7 @@ public class OutgoingTunnel extends RemoteTunnel {
 
         logger.v("Handshaking");
 
-        if (!write(handshake)) {
+        if (!writeInternal(handshake)) {
             logger.w("Failed to handshake");
             IOUtils.closeQuietly(this);
         }

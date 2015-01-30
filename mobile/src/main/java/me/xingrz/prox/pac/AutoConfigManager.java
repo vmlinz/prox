@@ -62,12 +62,11 @@ public class AutoConfigManager {
             return null;
         }
 
-        Uri uri = Uri.parse(proxy);
-        if (uri.getScheme().length() == 0) {
-            return uri.buildUpon().scheme(PROXY_TYPE_HTTP).build();
-        } else {
-            return uri.normalizeScheme();
+        if (!proxy.contains("://")) {
+            proxy = PROXY_TYPE_HTTP + "://" + proxy;
         }
+
+        return Uri.parse(proxy).normalizeScheme();
     }
 
 

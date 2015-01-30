@@ -160,6 +160,10 @@ public abstract class Tunnel implements Closeable, Readable, Writable {
      * @return 是否完整发送了所有数据
      */
     public boolean write(ByteBuffer buffer) {
+        return writeInternal(buffer);
+    }
+
+    protected boolean writeInternal(ByteBuffer buffer) {
         try {
             logger.v("Writing to channel");
 
