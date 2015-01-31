@@ -22,6 +22,12 @@ import me.xingrz.prox.internet.IPHeader;
 import me.xingrz.prox.internet.IPv4Header;
 import me.xingrz.prox.internet.NumericUtils;
 
+/**
+ * UDP 包
+ *
+ * @author XiNGRZ
+ * @see <a href="https://en.wikipedia.org/wiki/User_Datagram_Protocol#Packet_structure">UDP 包结构</a>
+ */
 public class UdpHeader extends IPv4Header {
 
     public UdpHeader(byte[] packet) {

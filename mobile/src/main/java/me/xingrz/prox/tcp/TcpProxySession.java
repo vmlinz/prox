@@ -32,6 +32,7 @@ import me.xingrz.prox.ProxVpnService;
 import me.xingrz.prox.logging.FormattingLogger;
 import me.xingrz.prox.logging.FormattingLoggers;
 import me.xingrz.prox.pac.AutoConfigManager;
+import me.xingrz.prox.tcp.http.HostReverseLookup;
 import me.xingrz.prox.tcp.http.HttpConnectHandler;
 import me.xingrz.prox.tcp.tunnel.IncomingTunnel;
 import me.xingrz.prox.tcp.tunnel.OutgoingTunnel;
@@ -67,15 +68,20 @@ public class TcpProxySession extends AbstractTransportProxy.Session {
 
         incomingTunnel = new IncomingTunnel(selector, localChannel, String.format("%08x", hashCode())) {
             @Override
-            protected void onParsedHost(final String host) {
+            protected void onParsedHost(String host) {
+                if (host == null) {
+                    host = HostReverseLookup.get(getRemoteAddress().getHostAddress());
+                    logger.v("Reverse lookup host: %s", host);
+                }
+
                 if (host == null) {
                     logger.v("Not a HTTP request");
                     connect(null);
                 } else {
+                    HostReverseLookup.put(getRemoteAddress().getHostAddress(), host);
                     AutoConfigManager.getInstance().lookup(host, new AutoConfigManager.ProxyLookupCallback() {
                         @Override
                         public void onProxyLookup(Uri proxy) {
-                            logger.v("HTTP request to host: %s, proxy: %s", host, proxy);
                             connect(proxy);
                         }
                     });

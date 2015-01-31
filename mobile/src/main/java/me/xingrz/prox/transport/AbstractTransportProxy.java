@@ -205,6 +205,7 @@ public abstract class AbstractTransportProxy
      * @param remoteAddress 目标地址
      * @param remotePort    目标端口
      * @return 新的会话实例
+     * @throws IOException 可能会因为无法绑定端口而抛出异常
      */
     protected abstract S createSession(int sourcePort, InetAddress remoteAddress, int remotePort)
             throws IOException;
@@ -217,6 +218,7 @@ public abstract class AbstractTransportProxy
      * @param remoteAddress 目标地址
      * @param remotePort    目标端口
      * @return 新的会话实例
+     * @throws IOException 如果是新创建会话，可能会抛出异常
      */
     public S pickSession(int sourcePort, InetAddress remoteAddress, int remotePort) throws IOException {
         S session = createSession(sourcePort, remoteAddress, remotePort);
@@ -228,7 +230,7 @@ public abstract class AbstractTransportProxy
      * 获取一个已有的会话
      *
      * @param sourcePort 来源端口，作为标识
-     * @return 会话实例，或 {@value null} 表示不存在
+     * @return 会话实例，或 {@code null} 表示不存在
      */
     public S getSession(int sourcePort) {
         return sessions.get(sourcePort);
@@ -238,7 +240,7 @@ public abstract class AbstractTransportProxy
      * 完成并删除会话
      *
      * @param sourcePort 来源端口
-     * @return 会话实例，或 {@value null} 表示不存在
+     * @return 会话实例，或 {@code null} 表示不存在
      */
     public S finishSession(int sourcePort) {
         S session = sessions.get(sourcePort);

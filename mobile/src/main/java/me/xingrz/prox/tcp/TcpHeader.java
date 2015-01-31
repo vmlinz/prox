@@ -23,9 +23,10 @@ import me.xingrz.prox.internet.IPv4Header;
 import me.xingrz.prox.internet.NumericUtils;
 
 /**
- * https://en.wikipedia.org/wiki/Transmission_Control_Protocol#TCP_segment_structure
+ * TCP 包
  *
  * @author XiNGRZ
+ * @see <a href="https://en.wikipedia.org/wiki/Transmission_Control_Protocol#TCP_segment_structure">TCP 包结构</a>
  */
 public class TcpHeader extends IPv4Header {
 
@@ -47,10 +48,20 @@ public class TcpHeader extends IPv4Header {
         return super.offset() + ipHeaderLength();
     }
 
+    /**
+     * 取得来源端口号
+     *
+     * @return 来源端口号
+     */
     public int getSourcePort() {
         return NumericUtils.readShort(packet, offset());
     }
 
+    /**
+     * 设置来源端口号
+     *
+     * @param port 来源端口号
+     */
     public void setSourcePort(int port) {
         NumericUtils.writeShort(packet, offset(), port);
     }

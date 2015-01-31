@@ -140,7 +140,7 @@ public abstract class Tunnel implements Closeable, Readable, Writable {
      * Tunnel 从自己的 {@link #channel} 接收到了数据
      *
      * @param buffer 接收到的数据
-     * @return {@value true} 表示已自己消化了数据，{@value false} 则会将数据发给 {@link #brother}
+     * @return {@code true} 表示已自己消化了数据，{@code false} 则会将数据发给 {@link #brother}
      */
     protected abstract boolean afterReceived(ByteBuffer buffer);
 

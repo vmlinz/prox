@@ -24,9 +24,10 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 
 /**
- * https://en.wikipedia.org/wiki/IPv4#Header
+ * IPv4 包
  *
  * @author XiNGRZ
+ * @see <a href="https://en.wikipedia.org/wiki/IPv4#Header">IPv4 首部结构</a>
  */
 public class IPv4Header extends IPHeader {
 

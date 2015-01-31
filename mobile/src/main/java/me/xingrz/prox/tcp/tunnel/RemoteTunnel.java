@@ -96,10 +96,6 @@ public abstract class RemoteTunnel extends Tunnel implements Connectible {
      * {@inheritDoc}
      * {@link me.xingrz.prox.tcp.tunnel.RemoteTunnel} 的 {@link #write(java.nio.ByteBuffer)}
      * 方法允许在 {@link #connect(java.net.InetSocketAddress)} 前调用，数据会先缓存在内部
-     *
-     * @param buffer 即将发送的数据
-     * @return
-     * @throws IOException
      */
     @Override
     public boolean write(ByteBuffer buffer) {
