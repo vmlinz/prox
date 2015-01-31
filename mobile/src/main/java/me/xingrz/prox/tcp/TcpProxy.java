@@ -31,12 +31,14 @@ import java.util.concurrent.TimeUnit;
 
 import me.xingrz.prox.logging.FormattingLogger;
 import me.xingrz.prox.logging.FormattingLoggers;
+import me.xingrz.prox.selectable.Acceptable;
 import me.xingrz.prox.selectable.Connectible;
 import me.xingrz.prox.selectable.Readable;
 import me.xingrz.prox.selectable.Writable;
 import me.xingrz.prox.transport.AbstractTransportProxy;
 
-public class TcpProxy extends AbstractTransportProxy<ServerSocketChannel, SocketChannel, TcpProxySession> {
+public class TcpProxy extends AbstractTransportProxy<ServerSocketChannel, TcpProxySession>
+        implements Acceptable {
 
     private static final int TCP_SESSION_MAX_COUNT = 60;
     private static final long TCP_SESSION_TIMEOUT_MS = TimeUnit.SECONDS.toMillis(60);
@@ -50,7 +52,7 @@ public class TcpProxy extends AbstractTransportProxy<ServerSocketChannel, Socket
         ServerSocketChannel channel = ServerSocketChannel.open();
         channel.configureBlocking(false);
         channel.socket().bind(new InetSocketAddress(0));
-        channel.register(selector, SelectionKey.OP_ACCEPT);
+        channel.register(selector, SelectionKey.OP_ACCEPT, this);
         return channel;
     }
 
@@ -66,30 +68,24 @@ public class TcpProxy extends AbstractTransportProxy<ServerSocketChannel, Socket
 
     @Override
     protected void onSelected(SelectionKey key) {
-        try {
-            if (key.isAcceptable()) {
-                accept(serverChannel.accept());
-            } else if (key.isConnectable()) {
-                ((Connectible) key.attachment()).onConnectible(key);
-            } else if (key.isReadable()) {
-                ((Readable) key.attachment()).onReadable(key);
-            } else if (key.isWritable()) {
-                ((Writable) key.attachment()).onWritable(key);
-            }
-        } catch (IOException e) {
-            logger.w(e, "Proxy faced an error");
+        if (key.isAcceptable()) {
+            ((Acceptable) key.attachment()).onAcceptable(key);
+        } else if (key.isConnectable()) {
+            ((Connectible) key.attachment()).onConnectible(key);
+        } else if (key.isReadable()) {
+            ((Readable) key.attachment()).onReadable(key);
+        } else if (key.isWritable()) {
+            ((Writable) key.attachment()).onWritable(key);
         }
     }
 
     @Override
-    protected TcpProxySession createSession(final int sourcePort, InetAddress remoteAddress, int remotePort)
-            throws IOException {
+    protected TcpProxySession createSession(final int sourcePort, InetAddress remoteAddress, int remotePort) throws IOException {
         return new TcpProxySession(selector, sourcePort, remoteAddress, remotePort);
     }
 
     @Override
-    public TcpProxySession pickSession(int sourcePort, InetAddress remoteAddress, int remotePort)
-            throws IOException {
+    public TcpProxySession pickSession(int sourcePort, InetAddress remoteAddress, int remotePort) throws IOException {
         TcpProxySession session = getSession(sourcePort);
 
         if (session == null
@@ -106,11 +102,18 @@ public class TcpProxy extends AbstractTransportProxy<ServerSocketChannel, Socket
 
     /**
      * 接收到来自 VPN 的 TCP 通道，开始取出会话信息并建立远程通道
-     *
-     * @param localChannel 从 VPN 传来的本地通道
-     * @throws IOException
      */
-    public void accept(SocketChannel localChannel) throws IOException {
+    @Override
+    public void onAcceptable(SelectionKey key) {
+        SocketChannel localChannel;
+
+        try {
+            localChannel = serverChannel.accept();
+        } catch (IOException e) {
+            logger.w(e, "Failed to accept client, ignored");
+            return;
+        }
+
         int sourcePort = localChannel.socket().getPort();
 
         TcpProxySession session = getSession(sourcePort);

@@ -74,13 +74,18 @@ public abstract class Tunnel implements Closeable, Readable, Writable {
     /**
      * 开始接收数据
      */
-    public final void beginReceiving() throws IOException {
-        if (channel.isBlocking()) {
-            channel.configureBlocking(false);
-        }
+    public final void beginReceiving() {
+        try {
+            if (channel.isBlocking()) {
+                channel.configureBlocking(false);
+            }
 
-        channel.register(selector, SelectionKey.OP_READ, this);
-        logger.v("Began receiving and waiting for OP_READ");
+            channel.register(selector, SelectionKey.OP_READ, this);
+            logger.v("Began receiving and waiting for OP_READ");
+        } catch (IOException e) {
+            logger.w(e, "Failed to begin receiving, close");
+            IOUtils.closeQuietly(this);
+        }
     }
 
     /**
@@ -97,7 +102,7 @@ public abstract class Tunnel implements Closeable, Readable, Writable {
         try {
             read = channel.read(receiving);
         } catch (IOException e) {
-            logger.e("Failed to read from channel, terminated");
+            logger.w(e, "Failed to read from channel, terminated");
             IOUtils.closeQuietly(this);
             return;
         }
@@ -237,12 +242,7 @@ public abstract class Tunnel implements Closeable, Readable, Writable {
             return;
         }
 
-        try {
-            brother.beginReceiving();
-        } catch (IOException e) {
-            logger.w(e, "Failed to make brother begin receiving, closed");
-            IOUtils.closeQuietly(this);
-        }
+        brother.beginReceiving();
     }
 
     /**

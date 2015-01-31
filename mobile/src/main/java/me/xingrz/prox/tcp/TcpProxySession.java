@@ -43,7 +43,7 @@ public class TcpProxySession extends AbstractTransportProxy.Session {
     private OutgoingTunnel outgoingTunnel;
 
     public TcpProxySession(Selector selector, int sourcePort,
-                           InetAddress remoteAddress, int remotePort) throws IOException {
+                           InetAddress remoteAddress, int remotePort) {
         super(selector, sourcePort, remoteAddress, remotePort);
     }
 
@@ -62,7 +62,9 @@ public class TcpProxySession extends AbstractTransportProxy.Session {
         return outgoingTunnel != null && outgoingTunnel.isEstablished();
     }
 
-    public void accept(SocketChannel localChannel) throws IOException {
+    public void accept(SocketChannel localChannel) {
+        active();
+
         incomingTunnel = new IncomingTunnel(selector, localChannel, String.format("%08x", hashCode())) {
             @Override
             protected void onParsedHost(final String host) {
@@ -84,7 +86,14 @@ public class TcpProxySession extends AbstractTransportProxy.Session {
         logger.v("Established incoming tunnel local:%d <=> proxy:%d",
                 getSourcePort(), incomingTunnel.socket().getLocalPort());
 
-        outgoingTunnel = new OutgoingTunnel(selector, String.format("%08x", hashCode()));
+        try {
+            outgoingTunnel = new OutgoingTunnel(selector, String.format("%08x", hashCode()));
+        } catch (IOException e) {
+            logger.w(e, "Failed to issue outgoing tunnel, close");
+            IOUtils.closeQuietly(this);
+            return;
+        }
+
         ProxVpnService.getInstance().protect(outgoingTunnel.socket());
 
         logger.v("Established outgoing tunnel proxy:%d -> internet",

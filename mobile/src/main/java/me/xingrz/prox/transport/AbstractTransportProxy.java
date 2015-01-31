@@ -35,11 +35,10 @@ import me.xingrz.prox.logging.FormattingLogger;
  * 传输层代理服务器抽象
  *
  * @param <C> 服务器通道，比如 {@link java.nio.channels.ServerSocketChannel} 或 {@link java.nio.channels.DatagramChannel}
- * @param <L> 客户端会话通道，比如 {@link java.nio.channels.SocketChannel} 或 {@link java.nio.channels.DatagramChannel}
  * @param <S> 会话
  */
 public abstract class AbstractTransportProxy
-        <C extends SelectableChannel, L extends SelectableChannel, S extends AbstractTransportProxy.Session>
+        <C extends SelectableChannel, S extends AbstractTransportProxy.Session>
         implements Runnable, Closeable {
 
     /**
@@ -206,7 +205,6 @@ public abstract class AbstractTransportProxy
      * @param remoteAddress 目标地址
      * @param remotePort    目标端口
      * @return 新的会话实例
-     * @throws IOException
      */
     protected abstract S createSession(int sourcePort, InetAddress remoteAddress, int remotePort)
             throws IOException;
@@ -219,7 +217,6 @@ public abstract class AbstractTransportProxy
      * @param remoteAddress 目标地址
      * @param remotePort    目标端口
      * @return 新的会话实例
-     * @throws IOException
      */
     public S pickSession(int sourcePort, InetAddress remoteAddress, int remotePort) throws IOException {
         S session = createSession(sourcePort, remoteAddress, remotePort);

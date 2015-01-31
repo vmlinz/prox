@@ -31,15 +31,18 @@ import java.nio.channels.Selector;
 
 import me.xingrz.prox.logging.FormattingLogger;
 import me.xingrz.prox.logging.FormattingLoggers;
+import me.xingrz.prox.selectable.Readable;
 import me.xingrz.prox.transport.AbstractTransportProxy;
 
-public class UdpProxySession extends AbstractTransportProxy.Session {
+public class UdpProxySession extends AbstractTransportProxy.Session implements Readable {
 
+    private final UdpProxy udpProxy;
     private final DatagramChannel serverChannel;
 
-    public UdpProxySession(Selector selector, int sourcePort,
+    public UdpProxySession(UdpProxy udpProxy, Selector selector, int sourcePort,
                            InetAddress remoteAddress, int remotePort) throws IOException {
         super(selector, sourcePort, remoteAddress, remotePort);
+        this.udpProxy = udpProxy;
         this.serverChannel = DatagramChannel.open();
         this.serverChannel.configureBlocking(false);
         this.serverChannel.socket().bind(new InetSocketAddress(0));
@@ -57,6 +60,11 @@ public class UdpProxySession extends AbstractTransportProxy.Session {
     public void send(ByteBuffer buffer) throws IOException {
         serverChannel.register(selector, SelectionKey.OP_READ, this);
         serverChannel.send(buffer, new InetSocketAddress(getRemoteAddress(), getRemotePort()));
+    }
+
+    @Override
+    public void onReadable(SelectionKey key) {
+        udpProxy.receive((DatagramChannel) key.channel(), this);
     }
 
     @Override

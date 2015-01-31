@@ -18,6 +18,8 @@
 
 package me.xingrz.prox.udp;
 
+import org.apache.commons.io.IOUtils;
+
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -30,9 +32,10 @@ import java.util.concurrent.TimeUnit;
 import me.xingrz.prox.ProxVpnService;
 import me.xingrz.prox.logging.FormattingLogger;
 import me.xingrz.prox.logging.FormattingLoggers;
+import me.xingrz.prox.selectable.Readable;
 import me.xingrz.prox.transport.AbstractTransportProxy;
 
-public class UdpProxy extends AbstractTransportProxy<DatagramChannel, DatagramChannel, UdpProxySession> {
+public class UdpProxy extends AbstractTransportProxy<DatagramChannel, UdpProxySession> implements Readable {
 
     private static final int UDP_SESSION_MAX_COUNT = 20;
     private static final long UDP_SESSION_TIMEOUT_MS = TimeUnit.SECONDS.toMillis(30);
@@ -64,23 +67,15 @@ public class UdpProxy extends AbstractTransportProxy<DatagramChannel, DatagramCh
 
     @Override
     protected void onSelected(SelectionKey key) {
-        try {
-            if (key.isReadable()) {
-                if (key.attachment() != null && key.attachment() instanceof UdpProxySession) {
-                    receive((DatagramChannel) key.channel(), (UdpProxySession) key.attachment());
-                } else {
-                    accept((DatagramChannel) key.channel());
-                }
-            }
-        } catch (IOException e) {
-            logger.w(e, "Proxy faced an error");
+        if (key.isReadable()) {
+            ((Readable) key.attachment()).onReadable(key);
         }
     }
 
     @Override
     protected UdpProxySession createSession(int sourcePort, InetAddress remoteAddress, int remotePort)
             throws IOException {
-        return new UdpProxySession(selector, sourcePort, remoteAddress, remotePort);
+        return new UdpProxySession(this, selector, sourcePort, remoteAddress, remotePort);
     }
 
     /**
@@ -90,7 +85,6 @@ public class UdpProxy extends AbstractTransportProxy<DatagramChannel, DatagramCh
      * @param remoteAddress 目标地址
      * @param remotePort    目标端口
      * @return 所创建的会话
-     * @throws IOException
      */
     @Override
     public UdpProxySession pickSession(int sourcePort, InetAddress remoteAddress, int remotePort) throws IOException {
@@ -109,22 +103,31 @@ public class UdpProxy extends AbstractTransportProxy<DatagramChannel, DatagramCh
     /**
      * 收到了刚才 VPN 网关 {@link #createSession(int, java.net.InetAddress, int)} 过后的转发数据包
      * 那么我们就将它发到该去的地方吧！
-     *
-     * @param localChannel 代表网关的通道
-     * @throws IOException
      */
-    public void accept(DatagramChannel localChannel) throws IOException {
+    @Override
+    public void onReadable(SelectionKey key) {
+        InetSocketAddress source;
+
         buffer.clear();
 
-        InetSocketAddress source = (InetSocketAddress) localChannel.receive(buffer);
+        try {
+            source = (InetSocketAddress) ((DatagramChannel) key.channel()).receive(buffer);
+        } catch (IOException e) {
+            logger.w(e, "Failed to receive from local channel");
+            IOUtils.closeQuietly(this);
+            return;
+        }
+
         if (source == null) {
             logger.w("Ignored packet without source");
+            IOUtils.closeQuietly(this);
             return;
         }
 
         UdpProxySession session = getSession(source.getPort());
         if (session == null) {
             logger.w("Ignored packet from %d without session", source.getPort());
+            IOUtils.closeQuietly(this);
             return;
         }
 
@@ -132,7 +135,13 @@ public class UdpProxy extends AbstractTransportProxy<DatagramChannel, DatagramCh
 
         buffer.flip();
 
-        session.send(buffer);
+        try {
+            session.send(buffer);
+        } catch (IOException e) {
+            logger.w(e, "Failed to send out session %08x", session.hashCode());
+            IOUtils.closeQuietly(this);
+            return;
+        }
 
         logger.v("Sent out session %08x local:%d -> in:%d -> out:%d -> %s:%d",
                 session.hashCode(),
@@ -147,12 +156,17 @@ public class UdpProxy extends AbstractTransportProxy<DatagramChannel, DatagramCh
      *
      * @param remoteChannel 公网通道
      * @param session       对应的会话
-     * @throws IOException
      */
-    private void receive(DatagramChannel remoteChannel, UdpProxySession session) throws IOException {
+    void receive(DatagramChannel remoteChannel, UdpProxySession session) {
         buffer.clear();
 
-        remoteChannel.receive(buffer);
+        try {
+            remoteChannel.receive(buffer);
+        } catch (IOException e) {
+            logger.w(e, "Failed to receive session %08x from remote channel, close", session.hashCode());
+            IOUtils.closeQuietly(this);
+            return;
+        }
 
         buffer.flip();
 
@@ -168,7 +182,12 @@ public class UdpProxy extends AbstractTransportProxy<DatagramChannel, DatagramCh
                 session.socket().getLocalPort(),
                 session.getRemoteAddress().getHostAddress(), session.getRemotePort());
 
-        serverChannel.send(buffer, address);
+        try {
+            serverChannel.send(buffer, address);
+        } catch (IOException e) {
+            logger.w(e, "Failed to feedback session %08x to local channel, close", session.hashCode());
+            IOUtils.closeQuietly(this);
+        }
     }
 
     /**
