@@ -61,8 +61,6 @@ public class OutgoingTunnel extends RemoteTunnel {
             return;
         }
 
-        logger.v("Handshaking");
-
         if (!writeInternal(handshake)) {
             logger.w("Failed to handshake");
             IOUtils.closeQuietly(this);
@@ -79,10 +77,7 @@ public class OutgoingTunnel extends RemoteTunnel {
             return false;
         }
 
-        logger.v("Received handshake response");
-
         if (proxy.establish(buffer)) {
-            logger.v("Handshake finished, established");
             establish();
         }
 

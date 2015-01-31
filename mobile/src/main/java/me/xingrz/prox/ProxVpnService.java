@@ -235,7 +235,6 @@ public class ProxVpnService extends VpnService implements Runnable {
 
             TcpProxySession session = tcpProxy.getSession(tcpHeader.getDestinationPort());
             if (session == null) {
-                logger.w("Dropped invalid TCP session %d", tcpHeader.getDestinationPort());
                 return;
             }
 
@@ -277,7 +276,6 @@ public class ProxVpnService extends VpnService implements Runnable {
 
             UdpProxySession session = udpProxy.finishSession(udpHeader.getDestinationPort());
             if (session == null) {
-                logger.w("Dropped invalid UDP session %d", udpHeader.getDestinationPort());
                 return;
             }
 

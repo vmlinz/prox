@@ -47,7 +47,6 @@ public abstract class RemoteTunnel extends Tunnel implements Connectible {
             onConnectedInternal();
         } else {
             channel.register(selector, SelectionKey.OP_CONNECT, this);
-            logger.v("Waiting for OP_CONNECT");
         }
     }
 

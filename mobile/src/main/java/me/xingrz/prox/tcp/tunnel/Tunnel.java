@@ -81,7 +81,6 @@ public abstract class Tunnel implements Closeable, Readable, Writable {
             }
 
             channel.register(selector, SelectionKey.OP_READ, this);
-            logger.v("Began receiving and waiting for OP_READ");
         } catch (IOException e) {
             logger.w(e, "Failed to begin receiving, close");
             IOUtils.closeQuietly(this);
@@ -108,36 +107,30 @@ public abstract class Tunnel implements Closeable, Readable, Writable {
         }
 
         if (read == -1) {
-            logger.v("Socket ended, finished");
             IOUtils.closeQuietly(this);
             return;
         }
 
         receiving.flip();
 
+        // 空，忽略
         if (!receiving.hasRemaining()) {
-            logger.v("Nothing received, ignored");
             return;
         }
 
-        logger.v("Received %d bytes", receiving.remaining());
-
+        // 子类处理了数据
         if (afterReceived(receiving)) {
-            logger.v("Subclass consumed, don't send");
             return;
         }
 
+        // 没东西需要处理
         if (!receiving.hasRemaining()) {
-            logger.v("Nothing to send, ignored");
             return;
         }
 
         brother.beforeSending(receiving);
-        logger.v("Sending to brother...");
 
-        if (brother.write(receiving)) {
-            logger.v("Sent to brother");
-        } else {
+        if (!brother.write(receiving)) {
             logger.v("Brother not ready for receiving, canceled");
             key.cancel();
         }
@@ -170,15 +163,11 @@ public abstract class Tunnel implements Closeable, Readable, Writable {
 
     protected boolean writeInternal(ByteBuffer buffer) {
         try {
-            logger.v("Writing to channel");
-
             while (buffer.hasRemaining()) {
                 if (channel.write(buffer) == 0) {
                     break;
                 }
             }
-
-            logger.v("Writing ended");
         } catch (IOException e) {
             logger.w(e, "Failed writing to " + channelToString());
             return false;
@@ -188,7 +177,6 @@ public abstract class Tunnel implements Closeable, Readable, Writable {
             keepRemaining(buffer);
             return false;
         } else {
-            logger.v("Writing completed");
             return true;
         }
     }
@@ -198,14 +186,13 @@ public abstract class Tunnel implements Closeable, Readable, Writable {
         remaining.put(buffer);
         remaining.flip();
 
+        // 通道连接完毕后即可写入，所以不需要注册
         if (!channel.isConnected()) {
-            logger.v("Channel will be writable after it is connected");
             return;
         }
 
         try {
             channel.register(selector, SelectionKey.OP_WRITE, this);
-            logger.v("Kept remaining buffer and waiting for a OP_WRITE");
         } catch (ClosedChannelException e) {
             logger.w(e, "Failed to register OP_WRITE since channel is closed");
             IOUtils.closeQuietly(this);
@@ -219,7 +206,6 @@ public abstract class Tunnel implements Closeable, Readable, Writable {
      */
     @Override
     public void onWritable(SelectionKey key) {
-        logger.v("Been writable, resuming writing");
         beforeSending(remaining);
         writeRemaining();
         key.cancel();
@@ -227,15 +213,11 @@ public abstract class Tunnel implements Closeable, Readable, Writable {
 
     protected void writeRemaining() {
         try {
-            logger.v("Writing remaining buffer to channel");
-
             while (remaining.hasRemaining()) {
                 if (channel.write(remaining) == 0) {
                     break;
                 }
             }
-
-            logger.v("Ended writing remaining");
         } catch (IOException e) {
             logger.w(e, "Failed writing remaining data, closed");
             IOUtils.closeQuietly(this);
@@ -262,6 +244,8 @@ public abstract class Tunnel implements Closeable, Readable, Writable {
             }
 
             remaining = null;
+            receiving = null;
+
             brother = null;
 
             closed = true;
