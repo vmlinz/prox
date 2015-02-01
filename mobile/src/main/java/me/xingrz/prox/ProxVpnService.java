@@ -38,6 +38,7 @@ import me.xingrz.prox.pac.AutoConfigManager;
 import me.xingrz.prox.tcp.TcpHeader;
 import me.xingrz.prox.tcp.TcpProxy;
 import me.xingrz.prox.tcp.TcpProxySession;
+import me.xingrz.prox.transport.TransportProxyRunner;
 import me.xingrz.prox.udp.UdpHeader;
 import me.xingrz.prox.udp.UdpProxy;
 import me.xingrz.prox.udp.UdpProxySession;
@@ -89,6 +90,8 @@ public class ProxVpnService extends VpnService implements Runnable {
     private TcpHeader tcpHeader;
     private UdpHeader udpHeader;
 
+    private TransportProxyRunner proxyRunner;
+
     private TcpProxy tcpProxy;
     private UdpProxy udpProxy;
 
@@ -123,7 +126,6 @@ public class ProxVpnService extends VpnService implements Runnable {
             public void onConfigLoad() {
                 thread.start();
                 logger.d("VPN service started");
-
             }
         });
 
@@ -140,10 +142,10 @@ public class ProxVpnService extends VpnService implements Runnable {
         IOUtils.closeQuietly(ingoing);
         ingoing = null;
 
-
         IOUtils.closeQuietly(intf);
         intf = null;
 
+        IOUtils.closeQuietly(proxyRunner);
         IOUtils.closeQuietly(tcpProxy);
         IOUtils.closeQuietly(udpProxy);
 
@@ -161,11 +163,15 @@ public class ProxVpnService extends VpnService implements Runnable {
         FileInputStream outgoing;
 
         try {
-            tcpProxy = new TcpProxy();
+            proxyRunner = new TransportProxyRunner();
+
+            tcpProxy = proxyRunner.create(TcpProxy.class);
             logger.d("TCP proxy started");
 
-            udpProxy = new UdpProxy();
+            udpProxy = proxyRunner.create(UdpProxy.class);
             logger.d("UDP proxy started");
+
+            proxyRunner.start();
 
             intf = establish();
             logger.d("VPN interface established");

@@ -23,11 +23,8 @@ import org.apache.commons.io.IOUtils;
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetAddress;
-import java.nio.channels.ClosedSelectorException;
 import java.nio.channels.SelectableChannel;
-import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
-import java.util.Iterator;
 
 import me.xingrz.prox.logging.FormattingLogger;
 
@@ -39,7 +36,7 @@ import me.xingrz.prox.logging.FormattingLogger;
  */
 public abstract class AbstractTransportProxy
         <C extends SelectableChannel, S extends AbstractTransportProxy.Session>
-        implements Runnable, Closeable {
+        implements Closeable {
 
     /**
      * 会话抽象
@@ -119,13 +116,10 @@ public abstract class AbstractTransportProxy
 
     private final NatSessionManager<S> sessions;
 
-    protected final Selector selector;
-    protected final C serverChannel;
+    protected Selector selector;
+    protected C serverChannel;
 
-    private final Thread thread;
-
-    public AbstractTransportProxy(int maxSessionCount, long sessionTimeout)
-            throws IOException {
+    public AbstractTransportProxy(int maxSessionCount, long sessionTimeout) {
 
         this.sessionTimeout = sessionTimeout;
         this.sessions = new NatSessionManager<S>(maxSessionCount) {
@@ -144,15 +138,6 @@ public abstract class AbstractTransportProxy
                 return shouldRecycleSession(session);
             }
         };
-
-        this.selector = Selector.open();
-
-        this.serverChannel = createChannel(selector);
-
-        this.thread = new Thread(this, logger.getTag());
-        this.thread.start();
-
-        logger.d("Proxy running on %d", port());
     }
 
     protected abstract FormattingLogger getLogger();
@@ -161,41 +146,21 @@ public abstract class AbstractTransportProxy
 
     public abstract int port();
 
-    protected abstract void onSelected(SelectionKey key);
+    public void start(Selector selector) throws IOException {
+        this.selector = selector;
 
-    @Override
-    public void run() {
-        try {
-            while (true) {
-                selector.select();
-                Iterator<SelectionKey> iterator = selector.selectedKeys().iterator();
-                while (iterator.hasNext()) {
-                    SelectionKey key = iterator.next();
-                    iterator.remove();
-
-                    if (key.isValid()) {
-                        onSelected(key);
-                    }
-                }
-            }
-        } catch (ClosedSelectorException ignored) {
-            logger.d("Proxy selector closed");
-        } catch (IOException e) {
-            logger.w(e, "Proxy running error");
-        }
-
-        logger.d("Proxy closed");
+        serverChannel = createChannel(selector);
+        logger.d("Proxy running on %d", port());
     }
 
     public boolean isRunning() {
-        return thread.isAlive();
+        return serverChannel.isOpen();
     }
 
     @Override
     public void close() throws IOException {
         sessions.clear();
-        IOUtils.closeQuietly(selector);
-        IOUtils.closeQuietly(serverChannel);
+        serverChannel.close();
     }
 
     /**

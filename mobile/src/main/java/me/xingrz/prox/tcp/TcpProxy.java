@@ -32,9 +32,6 @@ import java.util.concurrent.TimeUnit;
 import me.xingrz.prox.logging.FormattingLogger;
 import me.xingrz.prox.logging.FormattingLoggers;
 import me.xingrz.prox.selectable.Acceptable;
-import me.xingrz.prox.selectable.Connectible;
-import me.xingrz.prox.selectable.Readable;
-import me.xingrz.prox.selectable.Writable;
 import me.xingrz.prox.transport.AbstractTransportProxy;
 
 public class TcpProxy extends AbstractTransportProxy<ServerSocketChannel, TcpProxySession>
@@ -43,7 +40,7 @@ public class TcpProxy extends AbstractTransportProxy<ServerSocketChannel, TcpPro
     private static final int TCP_SESSION_MAX_COUNT = 60;
     private static final long TCP_SESSION_TIMEOUT_MS = TimeUnit.SECONDS.toMillis(60);
 
-    public TcpProxy() throws IOException {
+    public TcpProxy() {
         super(TCP_SESSION_MAX_COUNT, TCP_SESSION_TIMEOUT_MS);
     }
 
@@ -64,19 +61,6 @@ public class TcpProxy extends AbstractTransportProxy<ServerSocketChannel, TcpPro
     @Override
     public int port() {
         return serverChannel.socket().getLocalPort();
-    }
-
-    @Override
-    protected void onSelected(SelectionKey key) {
-        if (key.isAcceptable()) {
-            ((Acceptable) key.attachment()).onAcceptable(key);
-        } else if (key.isConnectable()) {
-            ((Connectible) key.attachment()).onConnectible(key);
-        } else if (key.isReadable()) {
-            ((Readable) key.attachment()).onReadable(key);
-        } else if (key.isWritable()) {
-            ((Writable) key.attachment()).onWritable(key);
-        }
     }
 
     @Override

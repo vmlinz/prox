@@ -66,13 +66,6 @@ public class UdpProxy extends AbstractTransportProxy<DatagramChannel, UdpProxySe
     }
 
     @Override
-    protected void onSelected(SelectionKey key) {
-        if (key.isReadable()) {
-            ((Readable) key.attachment()).onReadable(key);
-        }
-    }
-
-    @Override
     protected UdpProxySession createSession(int sourcePort, InetAddress remoteAddress, int remotePort)
             throws IOException {
         return new UdpProxySession(this, selector, sourcePort, remoteAddress, remotePort);
