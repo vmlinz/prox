@@ -50,7 +50,7 @@ public abstract class Tunnel implements Closeable, Readable, Writable {
     private ByteBuffer receiving = ByteBuffer.allocate(0xFFFF);
     private ByteBuffer remaining = ByteBuffer.allocate(0xFFFF);
 
-    private boolean closed;
+    private volatile boolean closed;
 
     public Tunnel(Selector selector, SocketChannel channel, String sessionKey) {
         this.selector = selector;
@@ -93,7 +93,11 @@ public abstract class Tunnel implements Closeable, Readable, Writable {
      * @param key Selection Key
      */
     @Override
-    public void onReadable(SelectionKey key) {
+    public final void onReadable(SelectionKey key) {
+        if (closed) {
+            return;
+        }
+
         receiving.clear();
 
         int read;
@@ -161,7 +165,11 @@ public abstract class Tunnel implements Closeable, Readable, Writable {
         return writeInternal(buffer);
     }
 
-    protected boolean writeInternal(ByteBuffer buffer) {
+    protected final boolean writeInternal(ByteBuffer buffer) {
+        if (closed) {
+            return false;
+        }
+
         try {
             while (buffer.hasRemaining()) {
                 if (channel.write(buffer) == 0) {
@@ -205,7 +213,11 @@ public abstract class Tunnel implements Closeable, Readable, Writable {
      * @param key Selection Key
      */
     @Override
-    public void onWritable(SelectionKey key) {
+    public final void onWritable(SelectionKey key) {
+        if (closed) {
+            return;
+        }
+
         beforeSending(remaining);
         writeRemaining();
         key.cancel();
@@ -237,6 +249,8 @@ public abstract class Tunnel implements Closeable, Readable, Writable {
 
     private void closeInternal(boolean withBrother) {
         if (!closed) {
+            closed = true;
+
             IOUtils.closeQuietly(channel);
 
             if (withBrother && brother != null) {
@@ -248,7 +262,6 @@ public abstract class Tunnel implements Closeable, Readable, Writable {
 
             brother = null;
 
-            closed = true;
             onClose();
         }
     }

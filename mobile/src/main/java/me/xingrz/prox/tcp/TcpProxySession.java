@@ -78,6 +78,7 @@ public class TcpProxySession extends AbstractTransportProxy.Session {
                     logger.v("Not a HTTP request");
                     connect(null);
                 } else {
+                    logger.v("Parsed HTTP Host: %s", host);
                     HostReverseLookup.put(getRemoteAddress().getHostAddress(), host);
                     AutoConfigManager.getInstance().lookup(host, new AutoConfigManager.ProxyLookupCallback() {
                         @Override
@@ -132,7 +133,7 @@ public class TcpProxySession extends AbstractTransportProxy.Session {
                 outgoingTunnel.setProxy(new HttpConnectHandler(outgoingTunnel,
                         getRemoteAddress().getHostAddress(), getRemotePort()));
 
-                logger.v("Use HTTP proxy %s:%d", proxy.getPort(), proxy.getPort());
+                logger.v("Use HTTP proxy %s:%d", proxy.getHost(), proxy.getPort());
 
                 return new InetSocketAddress(proxy.getHost(), proxy.getPort());
             } else {
