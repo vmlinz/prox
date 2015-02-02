@@ -20,6 +20,7 @@ package me.xingrz.prox.udp.dns;
 
 import android.util.LruCache;
 
+import java.net.InetAddress;
 import java.nio.ByteBuffer;
 
 import me.xingrz.prox.internet.IpUtils;
@@ -48,6 +49,11 @@ public class DnsReverseCache {
 
     public static void put(ByteBuffer buffer) {
         put(DnsRecord.parse(buffer));
+    }
+
+    public static void put(InetAddress address, String host) {
+        caches.put(IpUtils.toInteger(address) & 0xFFFFFF00, host);
+        logger.v("Cached %s %s", IpUtils.toString(IpUtils.toInteger(address) & 0xFFFFFF00), host);
     }
 
     public static String lookup(int address) {

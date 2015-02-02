@@ -82,6 +82,8 @@ public class AutoConfigManager {
 
     private AutoConfig autoConfig;
 
+    private Uri lastUsedProxy;
+
     private AutoConfigManager() {
         thread = new HandlerThread("ConfigManager");
         thread.start();
@@ -144,10 +146,15 @@ public class AutoConfigManager {
             @Override
             public void run() {
                 String proxy = autoConfig.findProxyForHost(host);
-                callback.onProxyLookup(parse(proxy));
+                lastUsedProxy = parse(proxy);
+                callback.onProxyLookup(lastUsedProxy);
                 logger.v("Finished for host %s: %s", host, proxy);
             }
         });
+    }
+
+    public Uri getLastUsedProxy() {
+        return lastUsedProxy;
     }
 
     private void dispose() {

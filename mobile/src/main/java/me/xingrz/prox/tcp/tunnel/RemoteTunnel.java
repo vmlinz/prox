@@ -22,14 +22,18 @@ import org.apache.commons.io.IOUtils;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.SocketTimeoutException;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 
 import me.xingrz.prox.selectable.Connectible;
+import me.xingrz.prox.tcp.Blacklist;
 
 public abstract class RemoteTunnel extends Tunnel implements Connectible {
+
+    private InetSocketAddress address;
 
     private static SocketChannel makeChannel() throws IOException {
         SocketChannel channel = SocketChannel.open();
@@ -43,6 +47,8 @@ public abstract class RemoteTunnel extends Tunnel implements Connectible {
     }
 
     public void connect(InetSocketAddress address) throws IOException {
+        this.address = address;
+
         if (channel.connect(address)) {
             onConnectedInternal();
         } else {
@@ -58,6 +64,10 @@ public abstract class RemoteTunnel extends Tunnel implements Connectible {
             } else {
                 IOUtils.closeQuietly(this);
             }
+        } catch (SocketTimeoutException e) {
+            Blacklist.countUp(address.getAddress());
+            logger.w(e, "Timeout finishing connect");
+            IOUtils.closeQuietly(this);
         } catch (IOException e) {
             logger.w(e, "Error finishing connect");
             IOUtils.closeQuietly(this);

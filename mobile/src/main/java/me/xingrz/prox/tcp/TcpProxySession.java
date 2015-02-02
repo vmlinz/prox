@@ -33,7 +33,6 @@ import me.xingrz.prox.internet.IpUtils;
 import me.xingrz.prox.logging.FormattingLogger;
 import me.xingrz.prox.logging.FormattingLoggers;
 import me.xingrz.prox.pac.AutoConfigManager;
-import me.xingrz.prox.tcp.http.HostReverseLookup;
 import me.xingrz.prox.tcp.http.HttpConnectHandler;
 import me.xingrz.prox.tcp.tunnel.IncomingTunnel;
 import me.xingrz.prox.tcp.tunnel.OutgoingTunnel;
@@ -71,22 +70,19 @@ public class TcpProxySession extends AbstractTransportProxy.Session {
         incomingTunnel = new IncomingTunnel(selector, localChannel, String.format("%08x", hashCode())) {
             @Override
             protected void onParsedHost(String host) {
-                if (host == null) {
-                    host = DnsReverseCache.lookup(IpUtils.toInteger(getRemoteAddress()));
-                    logger.v("Host DNS reverse lookup %s : %s", getRemoteAddress().getHostAddress(), host);
-                }
+                host = lookup(host);
 
                 if (host == null) {
-                    host = HostReverseLookup.get(getRemoteAddress().getHostAddress());
-                    logger.v("Host history reverse lookup %s : %s", getRemoteAddress().getHostAddress(), host);
-                }
-
-                if (host == null) {
-                    logger.v("Not a HTTP request");
-                    connect(null);
+                    Uri lastUsed = AutoConfigManager.getInstance().getLastUsedProxy();
+                    if (Blacklist.contains(getRemoteAddress()) && lastUsed != null) {
+                        logger.v("Remote %s is in black list, using last used proxy %s",
+                                getRemoteAddress().getHostAddress(), lastUsed.toString());
+                        connect(lastUsed);
+                    } else {
+                        connect(null);
+                    }
                 } else {
-                    logger.v("Parsed HTTP Host: %s", host);
-                    HostReverseLookup.put(getRemoteAddress().getHostAddress(), host);
+                    DnsReverseCache.put(getRemoteAddress(), host);
                     AutoConfigManager.getInstance().lookup(host, new AutoConfigManager.ProxyLookupCallback() {
                         @Override
                         public void onProxyLookup(Uri proxy) {
@@ -117,6 +113,23 @@ public class TcpProxySession extends AbstractTransportProxy.Session {
         outgoingTunnel.setBrother(incomingTunnel);
 
         incomingTunnel.beginReceiving();
+    }
+
+    private String lookup(String host) {
+        if (host != null) {
+            DnsReverseCache.put(getRemoteAddress(), host);
+            logger.v("Parsed HTTP Host: %s", host);
+            return host;
+        }
+
+        host = DnsReverseCache.lookup(IpUtils.toInteger(getRemoteAddress()));
+        if (host != null) {
+            logger.v("Host DNS reverse lookup %s : %s", getRemoteAddress().getHostAddress(), host);
+            return host;
+        }
+
+        logger.v("Not a parsable HTTP request");
+        return null;
     }
 
     private void connect(Uri proxy) {
