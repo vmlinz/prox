@@ -114,7 +114,7 @@ public class TcpProxy extends AbstractTransportProxy<ServerSocketChannel, TcpPro
 
     @Override
     protected boolean shouldRecycleSession(TcpProxySession session) {
-        return super.shouldRecycleSession(session) && !session.isEstablished();
+        return super.shouldRecycleSession(session) && !session.isAccepted();
     }
 
 }

@@ -44,9 +44,16 @@ public class TcpProxySession extends AbstractTransportProxy.Session {
     private IncomingTunnel incomingTunnel;
     private OutgoingTunnel outgoingTunnel;
 
+    private InetSocketAddress destination;
+
+    private boolean accepted;
+
+    private volatile boolean executed;
+
     public TcpProxySession(Selector selector, int sourcePort,
                            InetAddress remoteAddress, int remotePort) {
         super(selector, sourcePort, remoteAddress, remotePort);
+        destination = new InetSocketAddress(remoteAddress, remotePort);
     }
 
     @Override
@@ -56,16 +63,26 @@ public class TcpProxySession extends AbstractTransportProxy.Session {
 
     @Override
     public void close() throws IOException {
+        if (executed) {
+            TcpQueue.finish(this);
+        } else {
+            dequeue();
+        }
+
         IOUtils.closeQuietly(incomingTunnel);
         IOUtils.closeQuietly(outgoingTunnel);
     }
 
-    public boolean isEstablished() {
+    /*public boolean isEstablished() {
         return outgoingTunnel != null && outgoingTunnel.isEstablished();
+    }*/
+
+    public boolean isAccepted() {
+        return accepted;
     }
 
     public void accept(SocketChannel localChannel) {
-        active();
+        accepted = true;
 
         incomingTunnel = new IncomingTunnel(selector, localChannel, String.format("%08x", hashCode())) {
             @Override
@@ -77,16 +94,20 @@ public class TcpProxySession extends AbstractTransportProxy.Session {
                     if (Blacklist.contains(getRemoteAddress()) && lastUsed != null) {
                         logger.v("Remote %s is in black list, using last used proxy %s",
                                 getRemoteAddress().getHostAddress(), lastUsed.toString());
-                        connect(lastUsed);
-                    } else {
-                        connect(null);
+                        setDestination(lastUsed);
                     }
+
+                    enqueue();
                 } else {
                     DnsReverseCache.put(getRemoteAddress(), host);
                     AutoConfigManager.getInstance().lookup(host, new AutoConfigManager.ProxyLookupCallback() {
                         @Override
                         public void onProxyLookup(Uri proxy) {
-                            connect(proxy);
+                            if (proxy != null) {
+                                setDestination(proxy);
+                            }
+
+                            enqueue();
                         }
                     });
                 }
@@ -132,9 +153,42 @@ public class TcpProxySession extends AbstractTransportProxy.Session {
         return null;
     }
 
-    private void connect(Uri proxy) {
+    public void setDestination(Uri proxy) {
+        if (proxy.getScheme().equals(AutoConfigManager.PROXY_TYPE_HTTP)) {
+            outgoingTunnel.setProxy(new HttpConnectHandler(outgoingTunnel,
+                    getRemoteAddress().getHostAddress(), getRemotePort()));
+
+            logger.v("Use HTTP proxy %s:%d", proxy.getHost(), proxy.getPort());
+
+            destination = new InetSocketAddress(proxy.getHost(), proxy.getPort());
+        } else {
+            logger.v("Unsupported proxy scheme %s, ignored", proxy.getScheme());
+        }
+    }
+
+    public InetSocketAddress getDestination() {
+        return destination;
+    }
+
+    /**
+     * 将这个请求加入队列
+     */
+    private void enqueue() {
+        TcpQueue.queue(this);
+    }
+
+    /**
+     * 从队列中移除请求
+     */
+    private void dequeue() {
+        TcpQueue.remove(this);
+    }
+
+    public void connect() {
+        executed = true;
+
         try {
-            outgoingTunnel.connect(getDestinationAddress(proxy));
+            outgoingTunnel.connect(destination);
         } catch (IOException e) {
             logger.w(e, "Error connecting outgoing tunnel to remote host");
             IOUtils.closeQuietly(this);
@@ -145,23 +199,6 @@ public class TcpProxySession extends AbstractTransportProxy.Session {
                 getSourcePort(),
                 incomingTunnel.socket().getLocalPort(), outgoingTunnel.socket().getLocalPort(),
                 getRemoteAddress().getHostAddress(), getRemotePort());
-    }
-
-    private InetSocketAddress getDestinationAddress(Uri proxy) {
-        if (proxy != null) {
-            if (proxy.getScheme().equals(AutoConfigManager.PROXY_TYPE_HTTP)) {
-                outgoingTunnel.setProxy(new HttpConnectHandler(outgoingTunnel,
-                        getRemoteAddress().getHostAddress(), getRemotePort()));
-
-                logger.v("Use HTTP proxy %s:%d", proxy.getHost(), proxy.getPort());
-
-                return new InetSocketAddress(proxy.getHost(), proxy.getPort());
-            } else {
-                logger.v("Unsupported proxy scheme %s, ignored", proxy.getScheme());
-            }
-        }
-
-        return new InetSocketAddress(getRemoteAddress(), getRemotePort());
     }
 
 }
