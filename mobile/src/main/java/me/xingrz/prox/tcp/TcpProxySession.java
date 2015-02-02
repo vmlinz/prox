@@ -29,6 +29,7 @@ import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 
 import me.xingrz.prox.ProxVpnService;
+import me.xingrz.prox.internet.IpUtils;
 import me.xingrz.prox.logging.FormattingLogger;
 import me.xingrz.prox.logging.FormattingLoggers;
 import me.xingrz.prox.pac.AutoConfigManager;
@@ -37,6 +38,7 @@ import me.xingrz.prox.tcp.http.HttpConnectHandler;
 import me.xingrz.prox.tcp.tunnel.IncomingTunnel;
 import me.xingrz.prox.tcp.tunnel.OutgoingTunnel;
 import me.xingrz.prox.transport.AbstractTransportProxy;
+import me.xingrz.prox.udp.dns.DnsReverseCache;
 
 public class TcpProxySession extends AbstractTransportProxy.Session {
 
@@ -70,8 +72,13 @@ public class TcpProxySession extends AbstractTransportProxy.Session {
             @Override
             protected void onParsedHost(String host) {
                 if (host == null) {
+                    host = DnsReverseCache.lookup(IpUtils.toInteger(getRemoteAddress()));
+                    logger.v("Host DNS reverse lookup %s : %s", getRemoteAddress().getHostAddress(), host);
+                }
+
+                if (host == null) {
                     host = HostReverseLookup.get(getRemoteAddress().getHostAddress());
-                    logger.v("Reverse lookup host: %s", host);
+                    logger.v("Host history reverse lookup %s : %s", getRemoteAddress().getHostAddress(), host);
                 }
 
                 if (host == null) {

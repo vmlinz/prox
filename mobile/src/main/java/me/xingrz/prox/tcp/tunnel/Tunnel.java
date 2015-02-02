@@ -94,7 +94,7 @@ public abstract class Tunnel implements Closeable, Readable, Writable {
      */
     @Override
     public final void onReadable(SelectionKey key) {
-        if (closed) {
+        if (closed || receiving == null) {
             return;
         }
 
@@ -166,7 +166,7 @@ public abstract class Tunnel implements Closeable, Readable, Writable {
     }
 
     protected final boolean writeInternal(ByteBuffer buffer) {
-        if (closed) {
+        if (closed || remaining == null) {
             return false;
         }
 

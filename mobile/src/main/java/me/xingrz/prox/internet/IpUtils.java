@@ -18,22 +18,20 @@
 
 package me.xingrz.prox.internet;
 
+import java.net.InetAddress;
+
 public class IpUtils {
 
     public static String toString(int ip) {
-        return String.format("%s.%s.%s.%s",
+        return String.format("%d.%d.%d.%d",
                 (ip >> 24) & 0xff,
                 (ip >> 16) & 0xff,
                 (ip >> 8) & 0xff,
                 ip & 0xff);
     }
 
-    public static int toInteger(String ip) {
-        String[] split = ip.split(".");
-        return (Integer.parseInt(split[0]) << 24)
-                | (Integer.parseInt(split[1]) << 16)
-                | (Integer.parseInt(split[2]) << 8)
-                | (Integer.parseInt(split[3]));
+    public static int toInteger(InetAddress address) {
+        return NumericUtils.readInt(address.getAddress(), 0);
     }
 
 }

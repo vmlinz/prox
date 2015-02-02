@@ -34,6 +34,7 @@ import me.xingrz.prox.logging.FormattingLogger;
 import me.xingrz.prox.logging.FormattingLoggers;
 import me.xingrz.prox.selectable.Readable;
 import me.xingrz.prox.transport.AbstractTransportProxy;
+import me.xingrz.prox.udp.dns.DnsReverseCache;
 
 public class UdpProxy extends AbstractTransportProxy<DatagramChannel, UdpProxySession> implements Readable {
 
@@ -164,6 +165,10 @@ public class UdpProxy extends AbstractTransportProxy<DatagramChannel, UdpProxySe
         buffer.flip();
 
         session.finish();
+
+        if (session.getRemotePort() == 53) {
+            DnsReverseCache.put(buffer.asReadOnlyBuffer());
+        }
 
         InetSocketAddress address = new InetSocketAddress(
                 ProxVpnService.FAKE_CLIENT_ADDRESS, session.getSourcePort());
