@@ -18,8 +18,6 @@
 
 package me.xingrz.prox.udp;
 
-import org.apache.commons.io.IOUtils;
-
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -108,20 +106,17 @@ public class UdpProxy extends AbstractTransportProxy<DatagramChannel, UdpProxySe
             source = (InetSocketAddress) ((DatagramChannel) key.channel()).receive(buffer);
         } catch (IOException e) {
             logger.w(e, "Failed to receive from local channel");
-            IOUtils.closeQuietly(this);
             return;
         }
 
         if (source == null) {
             logger.w("Ignored packet without source");
-            IOUtils.closeQuietly(this);
             return;
         }
 
         UdpProxySession session = getSession(source.getPort());
         if (session == null) {
             logger.w("Ignored packet from %d without session", source.getPort());
-            IOUtils.closeQuietly(this);
             return;
         }
 
@@ -133,7 +128,7 @@ public class UdpProxy extends AbstractTransportProxy<DatagramChannel, UdpProxySe
             session.send(buffer);
         } catch (IOException e) {
             logger.w(e, "Failed to send out session %08x", session.hashCode());
-            IOUtils.closeQuietly(this);
+            finishSession(session.getSourcePort());
             return;
         }
 
@@ -158,13 +153,11 @@ public class UdpProxy extends AbstractTransportProxy<DatagramChannel, UdpProxySe
             remoteChannel.receive(buffer);
         } catch (IOException e) {
             logger.w(e, "Failed to receive session %08x from remote channel, close", session.hashCode());
-            IOUtils.closeQuietly(this);
+            finishSession(session.getSourcePort());
             return;
         }
 
         buffer.flip();
-
-        session.finish();
 
         if (session.getRemotePort() == 53) {
             DnsReverseCache.put(buffer.asReadOnlyBuffer());
@@ -184,8 +177,11 @@ public class UdpProxy extends AbstractTransportProxy<DatagramChannel, UdpProxySe
             serverChannel.send(buffer, address);
         } catch (IOException e) {
             logger.w(e, "Failed to feedback session %08x to local channel, close", session.hashCode());
-            IOUtils.closeQuietly(this);
+            finishSession(session.getSourcePort());
+            return;
         }
+
+        session.finish();
     }
 
     /**
