@@ -22,6 +22,8 @@ import android.content.Intent;
 import android.net.VpnService;
 import android.os.ParcelFileDescriptor;
 
+import com.crashlytics.android.Crashlytics;
+
 import org.apache.commons.io.IOUtils;
 
 import java.io.FileInputStream;
@@ -100,6 +102,7 @@ public class ProxVpnService extends VpnService implements Runnable, AutoConfigMa
     @Override
     public void onCreate() {
         super.onCreate();
+        Crashlytics.start(this);
 
         instance = this;
 
