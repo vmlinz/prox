@@ -39,7 +39,8 @@
 
         <service
             android:name=".ProxVpnService"
-            android:permission="android.permission.BIND_VPN_SERVICE">
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:process=":VPNService">
             <intent-filter>
                 <action android:name="android.net.VpnService" />
             </intent-filter>

@@ -76,6 +76,7 @@ public class ProxVpnService extends VpnService implements Runnable {
 
     public static final String EXTRA_PAC_URL = "pac_url";
 
+    private int startId;
 
     private Thread thread;
 
@@ -114,6 +115,8 @@ public class ProxVpnService extends VpnService implements Runnable {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        this.startId = startId;
+
         if (thread != null) {
             thread.interrupt();
         }
@@ -125,15 +128,14 @@ public class ProxVpnService extends VpnService implements Runnable {
             @Override
             public void onConfigLoad() {
                 thread.start();
-                logger.d("VPN service started");
             }
         });
 
-        return START_NOT_STICKY;
+        return START_REDELIVER_INTENT;
     }
 
     @Override
-    public void onDestroy() {
+    public void onRevoke() {
         if (thread != null) {
             thread.interrupt();
             thread = null;
@@ -149,6 +151,13 @@ public class ProxVpnService extends VpnService implements Runnable {
         IOUtils.closeQuietly(tcpProxy);
         IOUtils.closeQuietly(udpProxy);
 
+        logger.d("VPN service revoked");
+
+        stopSelf(startId);
+    }
+
+    @Override
+    public void onDestroy() {
         AutoConfigManager.destroy();
 
         instance = null;
@@ -160,6 +169,8 @@ public class ProxVpnService extends VpnService implements Runnable {
 
     @Override
     public void run() {
+        logger.d("VPN service started");
+
         FileInputStream outgoing;
 
         try {
