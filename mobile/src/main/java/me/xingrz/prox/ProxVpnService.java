@@ -43,7 +43,7 @@ import me.xingrz.prox.udp.UdpHeader;
 import me.xingrz.prox.udp.UdpProxy;
 import me.xingrz.prox.udp.UdpProxySession;
 
-public class ProxVpnService extends VpnService implements Runnable {
+public class ProxVpnService extends VpnService implements Runnable, AutoConfigManager.ConfigLoadCallback {
 
     private static final FormattingLogger logger = FormattingLoggers.getContextLogger();
 
@@ -77,6 +77,7 @@ public class ProxVpnService extends VpnService implements Runnable {
     public static final String EXTRA_PAC_URL = "pac_url";
 
     private int startId;
+    private volatile boolean running;
 
     private Thread thread;
 
@@ -102,7 +103,9 @@ public class ProxVpnService extends VpnService implements Runnable {
 
         instance = this;
 
-        packet = new byte[0xffff];
+        thread = new Thread(this, "VpnServer");
+
+        packet = new byte[0xFFFF];
 
         ipHeader = new IPHeader(packet);
         iPv4Header = new IPv4Header(packet);
@@ -115,41 +118,28 @@ public class ProxVpnService extends VpnService implements Runnable {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        this.startId = startId;
-
-        if (thread != null) {
-            thread.interrupt();
-        }
-
-        thread = new Thread(this, "VpnServer");
-
         String configUrl = intent.getStringExtra(EXTRA_PAC_URL);
-        AutoConfigManager.getInstance().load(configUrl, new AutoConfigManager.ConfigLoadCallback() {
-            @Override
-            public void onConfigLoad() {
-                thread.start();
-            }
-        });
 
-        return START_REDELIVER_INTENT;
+        if (running) {
+            logger.d("Service already running, just reload config");
+            AutoConfigManager.getInstance().load(configUrl, null);
+            return START_NOT_STICKY;
+        } else {
+            this.startId = startId;
+            AutoConfigManager.getInstance().load(configUrl, this);
+            return START_REDELIVER_INTENT;
+        }
+    }
+
+    @Override
+    public void onConfigLoad() {
+        running = true;
+        thread.start();
     }
 
     @Override
     public void onRevoke() {
-        if (thread != null) {
-            thread.interrupt();
-            thread = null;
-        }
-
-        IOUtils.closeQuietly(ingoing);
-        ingoing = null;
-
-        IOUtils.closeQuietly(intf);
-        intf = null;
-
-        IOUtils.closeQuietly(proxyRunner);
-        IOUtils.closeQuietly(tcpProxy);
-        IOUtils.closeQuietly(udpProxy);
+        running = false;
 
         logger.d("VPN service revoked");
 
@@ -171,7 +161,7 @@ public class ProxVpnService extends VpnService implements Runnable {
     public void run() {
         logger.d("VPN service started");
 
-        FileInputStream outgoing;
+        FileInputStream outgoing = null;
 
         try {
             proxyRunner = new TransportProxyRunner();
@@ -191,7 +181,7 @@ public class ProxVpnService extends VpnService implements Runnable {
             outgoing = new FileInputStream(intf.getFileDescriptor());
 
             int size;
-            while ((size = outgoing.read(packet)) != -1) {
+            while (running && (size = outgoing.read(packet)) != -1) {
                 if (!tcpProxy.isRunning()) {
                     logger.e("TCP proxy unexpectedly stopped");
                     break;
@@ -207,9 +197,21 @@ public class ProxVpnService extends VpnService implements Runnable {
                 }
             }
 
-            IOUtils.closeQuietly(outgoing);
+            logger.d("VPN thread finished");
         } catch (IOException e) {
             logger.w(e, "VPN ended with exception");
+        } finally {
+            IOUtils.closeQuietly(outgoing);
+            IOUtils.closeQuietly(ingoing);
+
+            IOUtils.closeQuietly(intf);
+
+            IOUtils.closeQuietly(tcpProxy);
+            IOUtils.closeQuietly(udpProxy);
+
+            IOUtils.closeQuietly(proxyRunner);
+
+            logger.d("Cleaned up");
         }
     }
 
