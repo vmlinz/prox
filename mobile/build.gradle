@@ -17,6 +17,7 @@
  */
 
 apply plugin: 'com.android.application'
+apply plugin: 'crashlytics'
 
 android {
     compileSdkVersion 21
@@ -38,6 +39,9 @@ android {
 }
 
 dependencies {
+    //noinspection GradleDynamicVersion
+    compile 'com.crashlytics.android:crashlytics:1.+'
+
     compile 'com.android.support:appcompat-v7:21.0.3'
     compile 'commons-io:commons-io:2.4'
     compile 'org.mozilla:rhino:1.7R4'
