@@ -163,8 +163,7 @@ public class DnsRecord {
     private static String getNameFrom(ByteBuffer buffer) throws RuntimeException {
         StringBuilder builder = new StringBuilder();
 
-        int end = buffer.position();
-        boolean ended = false;
+        int end = 0;
 
         byte length;
         while ((length = buffer.get()) != 0) {
@@ -174,26 +173,26 @@ public class DnsRecord {
             // 一个指针的头倆 bit 是 11，可以用 0xC0 (11000000) 掩码读出
             // 要得到后面的指针位置，同样需要掩码 0x3FFF (00111111 11111111)
             if ((length & 0xC0) == 0xC0) {
-                // 遇到指针，终点计算到此为止
-                end = buffer.position();
-                ended = true;
+                buffer.position(buffer.position() - 1);
+                int pointer = buffer.getShort() & 0x3FFF;
 
-                buffer.position(buffer.getShort(buffer.position() - 1) & 0x3FFF);
-            } else {
-                // 如果这个 label 不是从指针指过来的，则要累加终点偏移值
-                if (!ended) {
-                    end += 1 + length;
+                // 遇到指针，终点计算到此为止
+                if (end == 0) {
+                    end = buffer.position();
                 }
 
+                buffer.position(pointer);
+            } else {
                 buffer.get(buf, 0, length);
-                builder.append(new String(buf, 0, length)).append('.' );
+                builder.append(new String(buf, 0, length)).append('.');
             }
         }
 
-        // 最后，因为上面的游标已经因为指针被跳来跳去不知道去哪了
-        // 所以我们要把游标定回我们计算出来的终点位置
-        // 之所以要 +1，是因为上面的 while 循环最后会遇到一个 0x00 字节，需要计入在内
-        buffer.position(end + 1);
+        if (end > 0) {
+            // 最后，因为上面的游标已经因为指针被跳来跳去不知道去哪了
+            // 所以我们要把游标定回我们计算出来的终点位
+            buffer.position(end);
+        }
 
         return builder.substring(0, builder.length() - 1);
     }
