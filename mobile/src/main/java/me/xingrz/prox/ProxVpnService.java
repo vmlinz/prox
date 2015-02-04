@@ -34,6 +34,7 @@ import java.net.UnknownHostException;
 
 import me.xingrz.prox.internet.IPHeader;
 import me.xingrz.prox.internet.IPv4Header;
+import me.xingrz.prox.internet.IpUtils;
 import me.xingrz.prox.logging.FormattingLogger;
 import me.xingrz.prox.logging.FormattingLoggers;
 import me.xingrz.prox.pac.AutoConfigManager;
@@ -136,8 +137,10 @@ public class ProxVpnService extends VpnService implements Runnable, AutoConfigMa
 
     @Override
     public void onConfigLoad() {
-        running = true;
-        thread.start();
+        if (!running) {
+            running = true;
+            thread.start();
+        }
     }
 
     @Override
@@ -237,10 +240,6 @@ public class ProxVpnService extends VpnService implements Runnable, AutoConfigMa
             return;
         }
 
-        if (!iPv4Header.getSourceIpAddress().equals(PROXY_ADDRESS)) {
-            return;
-        }
-
         switch (iPv4Header.protocol()) {
             case IPHeader.PROTOCOL_TCP:
                 onTCPPacketReceived();
@@ -252,6 +251,10 @@ public class ProxVpnService extends VpnService implements Runnable, AutoConfigMa
     }
 
     private void onTCPPacketReceived() throws IOException {
+        if (tcpHeader.getSourceIp() != IpUtils.toInteger(PROXY_ADDRESS)) {
+            return;
+        }
+
         if (tcpHeader.getSourcePort() == tcpProxy.port()) {
             // 如果是来自本地 TCP 代理，表示是从隧道回来的包，回写给 VPN
 
@@ -293,7 +296,11 @@ public class ProxVpnService extends VpnService implements Runnable, AutoConfigMa
     }
 
     private void onUDPPacketReceived() throws IOException {
-        if (udpHeader.getSourcePort() == udpProxy.port()) {
+        if (udpHeader.getSourceIp() != IpUtils.toInteger(PROXY_ADDRESS)) {
+            return;
+        }
+
+        if (udpHeader.getDestinationIp() == IpUtils.toInteger(FAKE_CLIENT_ADDRESS)) {
             // UDP 代理丢回给 VPN 的
 
             UdpProxySession session = udpProxy.finishSession(udpHeader.getDestinationPort());
